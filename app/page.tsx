@@ -3,14 +3,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChildStoryScreen } from "@/components/child-screen/ChildStoryScreen";
+import { CharacterManager } from "@/components/parent-screen/CharacterManager";
 import { ParentHome } from "@/components/parent-screen/ParentHome";
 import { ParentLogViewer } from "@/components/parent-screen/ParentLogViewer";
 import { ParentPlayMenu } from "@/components/parent-screen/ParentPlayMenu";
+import { PlaceManager } from "@/components/parent-screen/PlaceManager";
+import { SettingsPanel } from "@/components/parent-screen/SettingsPanel";
+import { StoryBuilder } from "@/components/parent-screen/StoryBuilder";
+import { ThemeSelector } from "@/components/parent-screen/ThemeSelector";
 import { characters } from "@/data/characters";
 import { themes } from "@/data/themes";
 import { playMockVoice } from "@/lib/audioEngine";
-import { appendTurn, createTurn, loadTurns, saveTurns } from "@/lib/logEngine";
-import { loadPreference, savePreference } from "@/lib/preferenceEngine";
+import {
+  appendTurn,
+  clearTurns,
+  createTurn,
+  loadTurns,
+  saveTurns,
+} from "@/lib/logEngine";
+import {
+  clearPreference,
+  loadPreference,
+  savePreference,
+} from "@/lib/preferenceEngine";
 import {
   getStoryByTheme,
   nextScene as getNextScene,
@@ -68,9 +83,7 @@ export default function HomePage() {
   // Hydrate persisted state on mount, then log session_start.
   useEffect(() => {
     const persisted = loadTurns();
-    if (persisted.length > 0) {
-      setTurns(persisted);
-    }
+    if (persisted.length > 0) setTurns(persisted);
     const pref = loadPreference();
     if (pref.preferredCharacterId) {
       const idx = characters.findIndex((c) => c.id === pref.preferredCharacterId);
@@ -80,8 +93,8 @@ export default function HomePage() {
       const idx = themes.findIndex((t) => t.id === pref.preferredThemeId);
       if (idx >= 0) {
         setThemeIdx(idx);
-        const story = getStoryByTheme(themes[idx].id);
-        if (story) setSceneId(story.startSceneId);
+        const s = getStoryByTheme(themes[idx].id);
+        if (s) setSceneId(s.startSceneId);
       }
     }
     log(
@@ -92,21 +105,19 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist turns on every change (capped at MAX_TURNS by appendTurn).
   useEffect(() => {
     saveTurns(turns);
   }, [turns]);
 
-  // Persist preference whenever character or theme cycles.
   useEffect(() => {
+    const pref = loadPreference();
     savePreference({
-      voiceVolume: 0.8,
+      ...pref,
       preferredCharacterId: characters[characterIdx].id,
       preferredThemeId: themes[themeIdx].id,
     });
   }, [characterIdx, themeIdx]);
 
-  // Cleanup any active mock-voice timer on unmount.
   useEffect(() => {
     return () => {
       if (cancelAudioRef.current) cancelAudioRef.current();
@@ -129,9 +140,7 @@ export default function HomePage() {
         "choice",
         `choice=${choiceId} -> scene=${next ? next.id : "none"}`,
       );
-      if (next) {
-        setSceneId(next.id);
-      }
+      if (next) setSceneId(next.id);
     },
     [story, scene.id, log],
   );
@@ -158,21 +167,70 @@ export default function HomePage() {
     setThemeIdx(nextIdx);
     const nextTheme = themes[nextIdx];
     const nextStory = getStoryByTheme(nextTheme.id);
-    if (nextStory) {
-      setSceneId(nextStory.startSceneId);
-    }
+    if (nextStory) setSceneId(nextStory.startSceneId);
     log("system", "change_theme", `theme=${nextTheme.id}`);
   }, [themeIdx, log]);
 
   const handleCycleCharacter = useCallback(() => {
     const nextIdx = (characterIdx + 1) % characters.length;
     setCharacterIdx(nextIdx);
-    log(
-      "system",
-      "change_character",
-      `character=${characters[nextIdx].id}`,
-    );
+    log("system", "change_character", `character=${characters[nextIdx].id}`);
   }, [characterIdx, log]);
+
+  const handleSelectTheme = useCallback(
+    (t: { id: string }) => {
+      const idx = themes.findIndex((x) => x.id === t.id);
+      if (idx < 0) return;
+      setThemeIdx(idx);
+      const nextStory = getStoryByTheme(themes[idx].id);
+      if (nextStory) setSceneId(nextStory.startSceneId);
+      log("system", "change_theme", `theme=${themes[idx].id}`);
+    },
+    [log],
+  );
+
+  const handleSelectCharacter = useCallback(
+    (c: { id: string }) => {
+      const idx = characters.findIndex((x) => x.id === c.id);
+      if (idx < 0) return;
+      setCharacterIdx(idx);
+      log("system", "change_character", `character=${characters[idx].id}`);
+    },
+    [log],
+  );
+
+  const handleExportData = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      preference: loadPreference(),
+      turns: loadTurns(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rabbitchat-export-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleDeleteData = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const ok = window.confirm(
+      "저장된 로그와 설정을 모두 삭제할까요? 되돌릴 수 없습니다.",
+    );
+    if (!ok) return;
+    clearTurns();
+    clearPreference();
+    setTurns([]);
+    setCharacterIdx(0);
+    setThemeIdx(0);
+    const s = getStoryByTheme(themes[0].id);
+    if (s) setSceneId(s.startSceneId);
+  }, []);
 
   if (uiMode === "child") {
     return (
@@ -196,6 +254,11 @@ export default function HomePage() {
         character={character}
         onOpenMenu={() => setUiMode("parent_menu")}
         onOpenLogs={() => setUiMode("parent_logs")}
+        onOpenThemes={() => setUiMode("parent_themes")}
+        onOpenCharacters={() => setUiMode("parent_characters")}
+        onOpenPlaces={() => setUiMode("parent_places")}
+        onOpenSettings={() => setUiMode("parent_settings")}
+        onOpenBuilder={() => setUiMode("parent_builder")}
         onReturnToChild={handleReturnToChild}
       />
     );
@@ -214,6 +277,59 @@ export default function HomePage() {
     );
   }
 
-  // parent_logs
-  return <ParentLogViewer turns={turns} onBack={() => setUiMode("parent_home")} />;
+  if (uiMode === "parent_logs") {
+    return <ParentLogViewer turns={turns} onBack={() => setUiMode("parent_home")} />;
+  }
+
+  return (
+    <main className="min-h-screen bg-kkang-ivory px-6 py-8 text-kkang-ink">
+      <div className="mx-auto max-w-md">
+        <header className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">{tabTitle(uiMode)}</h1>
+          <button
+            type="button"
+            onClick={() => setUiMode("parent_home")}
+            className="rounded-full bg-kkang-cream px-4 py-2 text-sm shadow-soft"
+          >
+            뒤로
+          </button>
+        </header>
+
+        {uiMode === "parent_themes" ? (
+          <ThemeSelector currentThemeId={theme.id} onSelect={handleSelectTheme} />
+        ) : null}
+        {uiMode === "parent_characters" ? (
+          <CharacterManager
+            currentCharacterId={character.id}
+            onSelect={handleSelectCharacter}
+          />
+        ) : null}
+        {uiMode === "parent_places" ? <PlaceManager /> : null}
+        {uiMode === "parent_settings" ? (
+          <SettingsPanel
+            onExportData={handleExportData}
+            onDeleteData={handleDeleteData}
+          />
+        ) : null}
+        {uiMode === "parent_builder" ? <StoryBuilder /> : null}
+      </div>
+    </main>
+  );
+}
+
+function tabTitle(mode: UIMode): string {
+  switch (mode) {
+    case "parent_themes":
+      return "테마 선택";
+    case "parent_characters":
+      return "캐릭터 선택";
+    case "parent_places":
+      return "장소 관리";
+    case "parent_settings":
+      return "설정";
+    case "parent_builder":
+      return "이야기 만들기";
+    default:
+      return "부모 화면";
+  }
 }

@@ -1,4 +1,13 @@
-export type UIMode = "child" | "parent_home" | "parent_menu" | "parent_logs";
+export type UIMode =
+  | "child"
+  | "parent_home"
+  | "parent_menu"
+  | "parent_logs"
+  | "parent_themes"
+  | "parent_characters"
+  | "parent_places"
+  | "parent_settings"
+  | "parent_builder";
 
 // Reserved for future expansion (harness §8). Currently MVP uses UIMode only.
 // type PlayPhase =

@@ -1,18 +1,40 @@
 "use client";
 
-import { themes } from "@/data/themes";
+import { themes, type Theme } from "@/data/themes";
 
-// Skeleton: full theme catalog UI is deferred. Cycle action lives in ParentPlayMenu.
-export function ThemeSelector() {
+type Props = {
+  currentThemeId: string;
+  onSelect: (theme: Theme) => void;
+};
+
+export function ThemeSelector({ currentThemeId, onSelect }: Props) {
   return (
-    <section className="rounded-2xl bg-white/70 p-4 text-sm shadow-soft">
-      <h2 className="mb-2 text-base font-semibold">테마 (skeleton)</h2>
-      <ul className="space-y-1 text-kkang-ink/70">
-        {themes.map((t) => (
-          <li key={t.id}>
-            {t.emoji} {t.name}
-          </li>
-        ))}
+    <section>
+      <h2 className="mb-3 text-base font-semibold">테마 선택</h2>
+      <ul className="grid grid-cols-2 gap-3">
+        {themes.map((t) => {
+          const isActive = t.id === currentThemeId;
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(t)}
+                aria-pressed={isActive}
+                className={`flex w-full flex-col items-start gap-1 rounded-2xl px-4 py-3 text-left shadow-soft transition-transform active:scale-[0.99] ${
+                  isActive ? "bg-kkang-pink" : "bg-kkang-cream"
+                }`}
+              >
+                <span className="text-3xl" aria-hidden>
+                  {t.emoji}
+                </span>
+                <span className="text-sm font-semibold">{t.name}</span>
+                {isActive ? (
+                  <span className="text-xs text-kkang-ink/60">현재</span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
