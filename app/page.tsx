@@ -15,6 +15,10 @@ import { characters } from "@/data/characters";
 import { themes } from "@/data/themes";
 import { playMockVoice } from "@/lib/audioEngine";
 import {
+  pickBackgroundAsset,
+  resolveChoiceAssetMap,
+} from "@/lib/imageAssetResolver";
+import {
   appendTurn,
   clearTurns,
   createTurn,
@@ -233,11 +237,15 @@ export default function HomePage() {
   }, []);
 
   if (uiMode === "child") {
+    const backgroundAsset = pickBackgroundAsset(theme.name);
+    const choiceAssets = resolveChoiceAssetMap(scene.choices);
     return (
       <ChildStoryScreen
         character={character}
         scene={scene}
         isAudioPlaying={isAudioPlaying}
+        backgroundAsset={backgroundAsset}
+        choiceAssets={choiceAssets}
         onCharacterPress={handleCharacterPress}
         onChoice={handleChoice}
         onParentEnter={handleParentEnter}

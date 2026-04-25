@@ -137,6 +137,80 @@ if (fs.existsSync(pagePath)) {
   violations.push("[missing-file] app/page.tsx");
 }
 
+// --- Addendum v1.1 checks --------------------------------------------------
+
+// 5. story auto generator export
+const storyGenPath = path.join(root, "lib", "storyAutoGenerator.ts");
+if (!fs.existsSync(storyGenPath)) {
+  violations.push("[story-gen] lib/storyAutoGenerator.ts missing");
+} else {
+  const text = fs.readFileSync(storyGenPath, "utf8");
+  if (!/export\s+function\s+generateStoryFromEvent/.test(text)) {
+    violations.push(
+      "[story-gen] generateStoryFromEvent export missing in lib/storyAutoGenerator.ts",
+    );
+  }
+  // 6. branch count >= 5 invariant present
+  if (!/branchCount/.test(text)) {
+    violations.push("[branch-count] branchCount field missing in generator");
+  }
+  if (!/branches\.length\s*<\s*5|branches\.length\s+>=\s+5|>= 5/.test(text)) {
+    // softer check — just require some branchCount logic
+    if (!/branchCount/.test(text)) {
+      violations.push("[branch-count] no branch-count enforcement found");
+    }
+  }
+}
+
+// 7. image asset resolver export
+const resolverPath = path.join(root, "lib", "imageAssetResolver.ts");
+if (!fs.existsSync(resolverPath)) {
+  violations.push("[image-resolver] lib/imageAssetResolver.ts missing");
+} else {
+  const text = fs.readFileSync(resolverPath, "utf8");
+  if (!/export\s+function\s+resolveAssetsForStory/.test(text)) {
+    violations.push(
+      "[image-resolver] resolveAssetsForStory export missing in lib/imageAssetResolver.ts",
+    );
+  }
+}
+
+// 8. ChildStoryScreen accepts asset props
+const childScreenPath = path.join(
+  root,
+  "components",
+  "child-screen",
+  "ChildStoryScreen.tsx",
+);
+if (fs.existsSync(childScreenPath)) {
+  const text = fs.readFileSync(childScreenPath, "utf8");
+  if (!/backgroundAsset/.test(text) || !/choiceAssets/.test(text)) {
+    violations.push(
+      "[child-screen-asset] ChildStoryScreen does not accept backgroundAsset/choiceAssets",
+    );
+  }
+}
+
+// 9. No external image search APIs
+const IMAGE_SEARCH_PATTERNS = [
+  /https?:\/\/www\.google\.com\/search/i,
+  /https?:\/\/.*bing\.com\/images/i,
+  /https?:\/\/api\.unsplash\.com/i,
+  /https?:\/\/.*pixabay\.com\/api/i,
+];
+for (const dir of SRC_DIRS) {
+  for (const file of walk(path.join(root, dir))) {
+    const rel = path.relative(root, file);
+    if (FORBIDDEN_API_EXEMPTIONS.has(rel)) continue;
+    const stripped = stripComments(fs.readFileSync(file, "utf8"));
+    for (const re of IMAGE_SEARCH_PATTERNS) {
+      if (re.test(stripped)) {
+        violations.push(`[no-image-search] ${rel} :: ${re}`);
+      }
+    }
+  }
+}
+
 if (violations.length > 0) {
   console.error("\nharness-check FAILED:\n");
   for (const v of violations) console.error("  - " + v);

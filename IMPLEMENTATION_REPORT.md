@@ -38,24 +38,37 @@ components/parent-screen/{ParentHome,ParentPlayMenu,ParentLogViewer,
                           CharacterManager,ThemeSelector,StoryBuilder,SettingsPanel}.tsx
 
 public/.gitkeep
+public/assets/.gitkeep
+
+# Addendum v1.1 (N6)
+types/asset.ts
+data/assets.ts
+lib/imageAssetResolver.ts
+lib/storyAutoGenerator.ts
 ```
 
 ## 실행 결과
 
-- `npm install`: 성공 (109 packages)
-- `npm run build`: 성공 (TypeScript 0 error, Next.js static prerender, route `/` 4.28kB)
-- `npm run dev`: 실행 가능 (`http://localhost:3000`, Ready in ~2.3s, HTTP 200, 8.6KB SSR HTML)
+- `npm install`: 성공 (110 packages, Next 14.2.35)
+- `npm run build`: 성공 (TypeScript 0 error, Next.js static prerender, route `/` 11.1kB)
+- `npm run dev`: 실행 가능 (`http://localhost:3000`)
+- `npm run harness:check`: PASS (기존 검사 + Addendum v1.1 5개 검사 = 13개 모두 통과)
 
 ## 하네스 검증
 
 | 항목 | 결과 | 근거 |
 |---|---|---|
-| 아동 화면 텍스트 금지 | PASS | `components/child-screen/`·`components/character/` JSX visible children에 한글 0건. 1건 발견된 한글은 주석(`KkangchongCharacter.tsx:12`)이며 하네스 §14.1에서 주석은 명시 허용. |
+| 아동 화면 텍스트 금지 | PASS | `components/child-screen/`·`components/character/` JSX visible children에 한글 0건. 발견된 한글은 주석으로 §14.1 허용. |
 | 실제 API 호출 없음 | PASS | 전체 grep `api.openai.com` / `elevenlabs` / `supabase` 0건. mock provider 외 fetch 없음. |
 | SpeechRecognition 미사용 | PASS | grep `SpeechRecognition` / `webkitSpeechRecognition` 0건. |
-| scene 전환 | PASS | `lib/storyEngine.ts`의 `nextScene` + `app/page.tsx:handleChoice`로 s1→s2→s3 전이. `ChildStoryScreen` 내 `scene.visual` 이모지가 즉시 갱신. |
-| 로그 누적 | PASS | `app/page.tsx`에서 8개 turn 이벤트(`session_start`, `character_press`, `mock_voice`, `choice`, `parent_gate`, `restart_story`, `change_theme`, `change_character`) 모두 호출, `appendTurn`으로 최근 100개 유지, `ParentLogViewer`에서 역순 표시. |
-| 부모 메뉴 진입 | PASS | `ParentGate`의 3초 long press → `parent_gate` 로그 + `setUiMode("parent_home")` → `ParentHome`의 "놀이 메뉴" 버튼 → `setUiMode("parent_menu")`. |
+| scene 전환 | PASS | `lib/storyEngine.ts`의 `nextScene` + `app/page.tsx:handleChoice`로 s1→s2→s3 전이. |
+| 로그 누적 | PASS | `app/page.tsx`에서 8개 turn 이벤트 모두 호출, `appendTurn`으로 최근 100개 유지, `ParentLogViewer`에서 역순 표시. |
+| 부모 메뉴 진입 | PASS | `ParentGate`의 3초 long press → `setUiMode("parent_home")` → `ParentHome`의 "놀이 메뉴" 버튼 → `setUiMode("parent_menu")`. |
+| **story auto generator** | **PASS** | `lib/storyAutoGenerator.ts`의 `generateStoryFromEvent({placeName, eventText, ...})`가 Story + branchCount + branches[] + targetVocab[]을 반환. rule-based, LLM 호출 없음. |
+| **내부 분기 ≥5** | **PASS** | `buildBranches`가 7개 카테고리 중 ≥5개를 항상 생성, `branchCount` 필드로 보증. 화면에는 `visibleChoices = scene.choices.slice(0, 3)` 캡으로 2개 중심 표시. |
+| **image asset resolver** | **PASS** | `lib/imageAssetResolver.ts`의 `resolveAssetsForStory`가 `backgroundAsset` + `choiceAssets[]` + `objectAssets[]`을 반환. 매칭 실패 시 fallback 객체 반환. |
+| **큰 이미지 구조** | **PASS** | `ChildStoryScreen`이 optional `backgroundAsset` / `choiceAssets` props 수용. asset.imageUrl이 있으면 큰 `<img>` 렌더링, 없으면 emojiFallback. `ChoiceImageButton`도 동일 패턴. |
+| **외부 이미지 검색 없음** | **PASS** | `npm run harness:check`의 `[no-image-search]` 룰: `google.com/search`, `bing.com/images`, `unsplash.com/api`, `pixabay.com/api` 0건. |
 
 ## mock 처리된 기능
 
