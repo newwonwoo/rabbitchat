@@ -50,20 +50,60 @@ const martBananaStory: Story = {
   ],
 };
 
-const parkWalkSkeleton: Story = {
+const parkWalk: Story = {
   id: "story_park_walk",
   themeId: "theme_park",
-  title: "공원 산책 (skeleton)",
+  title: "공원에서 산책하기",
   startSceneId: "p1",
   scenes: [
     {
       id: "p1",
       placeId: "park_path",
       visual: "🌳🦋",
-      parentSummary: "공원 산책로 입구. 추후 시나리오 확장 예정.",
+      parentSummary: "공원 산책로 입구. 나비를 만남.",
+      choices: [
+        {
+          id: "follow_butterfly",
+          emoji: "🦋",
+          nextSceneId: "p2",
+          parentLabel: "나비 따라가기",
+        },
+        {
+          id: "look_tree",
+          emoji: "🌳",
+          nextSceneId: "p2",
+          parentLabel: "큰 나무 보기",
+        },
+      ],
+    },
+    {
+      id: "p2",
+      placeId: "park_path",
+      visual: "🌼🐦",
+      parentSummary: "꽃밭에서 새 소리를 들음.",
+      choices: [
+        {
+          id: "smell_flower",
+          emoji: "🌼",
+          nextSceneId: "p3",
+          parentLabel: "꽃 향기 맡기",
+        },
+        {
+          id: "wave_bird",
+          emoji: "👋",
+          nextSceneId: "p3",
+          parentLabel: "새에게 인사",
+        },
+      ],
+    },
+    {
+      id: "p3",
+      placeId: "park_path",
+      visual: "🌳✨",
+      parentSummary: "산책을 마치고 즐거운 마음으로 돌아감.",
       choices: [],
     },
   ],
 };
 
-export const stories: Story[] = [martBananaStory, parkWalkSkeleton];
+export const stories: Story[] = [martBananaStory, parkWalk];
