@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { CacheStats } from "@/components/parent-screen/CacheStats";
 import { MicTester } from "@/components/parent-screen/MicTester";
 import { loadPreference, savePreference } from "@/lib/preferenceEngine";
 
@@ -57,6 +58,8 @@ export function SettingsPanel({ onExportData, onDeleteData }: Props) {
       </div>
 
       <MicTester />
+
+      <CacheStats />
 
       <div className="rounded-2xl bg-white/70 p-4 shadow-soft">
         <h3 className="text-sm font-semibold">데이터</h3>

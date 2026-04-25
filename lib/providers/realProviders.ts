@@ -12,6 +12,15 @@
 //
 // All keys must be server-side. The mock voice still runs on the client.
 
+import {
+  bumpHit,
+  bumpMiss,
+  getCachedBlob,
+  getCachedText,
+  hashKey,
+  putCachedBlob,
+  putCachedText,
+} from "@/lib/aiCache";
 import { CHARACTER_VOICE_SYSTEM_PROMPT, sanitizeCharacterVoice } from "@/lib/characterVoice";
 
 import type { LLMProvider } from "./llmProvider";
@@ -61,9 +70,26 @@ export const openAISTTProvider: STTProvider = {
 
 // --- LLM: OpenAI chat ------------------------------------------------------
 
+const LLM_MODEL = "gpt-4o-mini";
+
 export const openAILLMProvider: LLMProvider = {
   name: "openai-chat",
   generateReply: async (prompt: string): Promise<string> => {
+    // Cache lookup — same model + system + prompt → same answer.
+    // temperature=0 below makes the API deterministic on cache miss too.
+    const cacheKey = await hashKey([
+      "llm",
+      LLM_MODEL,
+      CHARACTER_VOICE_SYSTEM_PROMPT,
+      prompt,
+    ]);
+    const hit = await getCachedText(cacheKey);
+    if (hit !== null) {
+      bumpHit("llm");
+      return hit;
+    }
+    bumpMiss("llm");
+
     const key = requireEnv(NEED_OPENAI);
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -72,12 +98,12 @@ export const openAILLMProvider: LLMProvider = {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: LLM_MODEL,
         messages: [
           { role: "system", content: CHARACTER_VOICE_SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
-        temperature: 0.7,
+        temperature: 0,
       }),
     });
     if (!res.ok) {
@@ -87,19 +113,40 @@ export const openAILLMProvider: LLMProvider = {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const raw = json.choices?.[0]?.message?.content ?? "";
-    // Defense in depth — if the LLM forgets the §3.3 rule we strip it.
-    return sanitizeCharacterVoice(raw);
+    const out = sanitizeCharacterVoice(raw);
+    await putCachedText(cacheKey, out);
+    return out;
   },
 };
 
 // --- TTS: ElevenLabs voice clone (엄마 목소리) ---------------------------
 // Streams MP3 back; we wrap into a Blob URL and play via Audio.
 
+async function playBlob(blob: Blob): Promise<void> {
+  if (typeof window === "undefined") return;
+  const url = URL.createObjectURL(blob);
+  const a = new Audio(url);
+  await a.play().catch(() => undefined);
+  a.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+}
+
 export const elevenLabsTTSProvider: TTSProvider = {
   name: "elevenlabs-clone",
   speak: async (text: string): Promise<void> => {
-    const key = requireEnv(NEED_ELEVEN);
     const voiceId = requireEnv(NEED_VOICE);
+
+    // Cache lookup — same (voiceId, text) → identical mp3 audio.
+    // This is the biggest cost-saver: repeated lines never hit the API.
+    const cacheKey = await hashKey(["tts", "elevenlabs", voiceId, text]);
+    const hit = await getCachedBlob(cacheKey);
+    if (hit) {
+      bumpHit("tts");
+      await playBlob(hit);
+      return;
+    }
+    bumpMiss("tts");
+
+    const key = requireEnv(NEED_ELEVEN);
     const res = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
@@ -120,10 +167,7 @@ export const elevenLabsTTSProvider: TTSProvider = {
       throw new Error(`[tts] ElevenLabs returned ${res.status}`);
     }
     const blob = await res.blob();
-    if (typeof window === "undefined") return;
-    const url = URL.createObjectURL(blob);
-    const a = new Audio(url);
-    await a.play().catch(() => undefined);
-    a.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+    await putCachedBlob(cacheKey, blob);
+    await playBlob(blob);
   },
 };
