@@ -19,4 +19,21 @@ body {
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  /* Android Chrome / iOS Safari: lock viewport to avoid keyboard zoom */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Use the small viewport on mobile so the URL bar doesn't crop content */
+  min-height: 100svh;
+}
+
+@media (display-mode: fullscreen), (display-mode: standalone) {
+  html,
+  body {
+    height: 100svh;
+  }
+}
+
+/* Disable iOS pull-to-refresh and accidental scroll on the child screen */
+[aria-label="child-story"] {
+  touch-action: none;
 }
