@@ -1,3 +1,5 @@
+import { sanitizeCharacterVoice } from "@/lib/characterVoice";
+
 import type { LLMProvider } from "./llmProvider";
 import type { STTProvider } from "./sttProvider";
 import type { TTSProvider } from "./ttsProvider";
@@ -18,7 +20,8 @@ export const mockSTTProvider: STTProvider = {
 export const mockLLMProvider: LLMProvider = {
   name: "mock-llm",
   generateReply: async (prompt: string): Promise<string> => {
-    return `(mock-reply) ${prompt.slice(0, 30)}`;
+    const raw = `(mock-reply) ${prompt.slice(0, 30)}`;
+    return sanitizeCharacterVoice(raw);
   },
 };
 

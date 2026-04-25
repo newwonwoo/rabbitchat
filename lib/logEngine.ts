@@ -1,3 +1,4 @@
+import { STORAGE_KEYS, loadJSON, removeKey, saveJSON } from "@/lib/storage/localStore";
 import type { Turn, TurnActor, TurnEvent } from "@/types/turn";
 
 const MAX_TURNS = 100;
@@ -16,4 +17,16 @@ export function appendTurn(turns: Turn[], turn: Turn): Turn[] {
   const next = [...turns, turn];
   if (next.length <= MAX_TURNS) return next;
   return next.slice(next.length - MAX_TURNS);
+}
+
+export function loadTurns(): Turn[] {
+  return loadJSON<Turn[]>(STORAGE_KEYS.turns, []);
+}
+
+export function saveTurns(turns: Turn[]): void {
+  saveJSON(STORAGE_KEYS.turns, turns);
+}
+
+export function clearTurns(): void {
+  removeKey(STORAGE_KEYS.turns);
 }

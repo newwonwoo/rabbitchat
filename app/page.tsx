@@ -9,7 +9,8 @@ import { ParentPlayMenu } from "@/components/parent-screen/ParentPlayMenu";
 import { characters } from "@/data/characters";
 import { themes } from "@/data/themes";
 import { playMockVoice } from "@/lib/audioEngine";
-import { appendTurn, createTurn } from "@/lib/logEngine";
+import { appendTurn, createTurn, loadTurns, saveTurns } from "@/lib/logEngine";
+import { loadPreference, savePreference } from "@/lib/preferenceEngine";
 import {
   getStoryByTheme,
   nextScene as getNextScene,
@@ -64,8 +65,25 @@ export default function HomePage() {
     [],
   );
 
-  // session_start (once on mount)
+  // Hydrate persisted state on mount, then log session_start.
   useEffect(() => {
+    const persisted = loadTurns();
+    if (persisted.length > 0) {
+      setTurns(persisted);
+    }
+    const pref = loadPreference();
+    if (pref.preferredCharacterId) {
+      const idx = characters.findIndex((c) => c.id === pref.preferredCharacterId);
+      if (idx >= 0) setCharacterIdx(idx);
+    }
+    if (pref.preferredThemeId) {
+      const idx = themes.findIndex((t) => t.id === pref.preferredThemeId);
+      if (idx >= 0) {
+        setThemeIdx(idx);
+        const story = getStoryByTheme(themes[idx].id);
+        if (story) setSceneId(story.startSceneId);
+      }
+    }
     log(
       "system",
       "session_start",
@@ -73,6 +91,20 @@ export default function HomePage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Persist turns on every change (capped at MAX_TURNS by appendTurn).
+  useEffect(() => {
+    saveTurns(turns);
+  }, [turns]);
+
+  // Persist preference whenever character or theme cycles.
+  useEffect(() => {
+    savePreference({
+      voiceVolume: 0.8,
+      preferredCharacterId: characters[characterIdx].id,
+      preferredThemeId: themes[themeIdx].id,
+    });
+  }, [characterIdx, themeIdx]);
 
   // Cleanup any active mock-voice timer on unmount.
   useEffect(() => {

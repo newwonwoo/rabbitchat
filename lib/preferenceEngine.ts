@@ -1,3 +1,4 @@
+import { STORAGE_KEYS, loadJSON, removeKey, saveJSON } from "@/lib/storage/localStore";
 import type { Preference } from "@/types/preference";
 
 export const defaultPreference: Preference = {
@@ -6,11 +7,14 @@ export const defaultPreference: Preference = {
   preferredThemeId: null,
 };
 
-// Skeleton: persistence layer (localStorage / Supabase) deferred.
 export function loadPreference(): Preference {
-  return defaultPreference;
+  return loadJSON<Preference>(STORAGE_KEYS.preference, defaultPreference);
 }
 
-export function savePreference(_pref: Preference): void {
-  // intentional no-op for MVP
+export function savePreference(pref: Preference): void {
+  saveJSON(STORAGE_KEYS.preference, pref);
+}
+
+export function clearPreference(): void {
+  removeKey(STORAGE_KEYS.preference);
 }
