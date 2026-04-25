@@ -27,6 +27,13 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   path.join("lib", "safetyGuards.ts"),
   path.join("lib", "characterVoice.ts"),
   path.join("lib", "storage", "turnStore.ts"),
+  // Real provider adapters intentionally call OpenAI / ElevenLabs.
+  // They are gated behind NEXT_PUBLIC_PROVIDER=real + API keys; mock
+  // mode (default) never imports them at runtime.
+  path.join("lib", "providers", "realProviders.ts"),
+  // index.ts re-exports identifiers like elevenLabsTTSProvider — these
+  // are TS names, not API URLs. Real provider mode is gated by env.
+  path.join("lib", "providers", "index.ts"),
 ]);
 
 const FORBIDDEN_APIS = [

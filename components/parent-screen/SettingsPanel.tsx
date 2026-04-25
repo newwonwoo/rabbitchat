@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { MicTester } from "@/components/parent-screen/MicTester";
 import { loadPreference, savePreference } from "@/lib/preferenceEngine";
 
 type Props = {
@@ -54,6 +55,8 @@ export function SettingsPanel({ onExportData, onDeleteData }: Props) {
           <li>· 음성 인식 API 사용하지 않음</li>
         </ul>
       </div>
+
+      <MicTester />
 
       <div className="rounded-2xl bg-white/70 p-4 shadow-soft">
         <h3 className="text-sm font-semibold">데이터</h3>

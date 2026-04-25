@@ -18,6 +18,7 @@ import {
   pickBackgroundAsset,
   resolveChoiceAssetMap,
 } from "@/lib/imageAssetResolver";
+import { playRandomVoice, playSound } from "@/lib/soundEngine";
 import {
   appendTurn,
   clearTurns,
@@ -132,6 +133,7 @@ export default function HomePage() {
     log("character", "character_press", `${character.id} pressed`);
     if (cancelAudioRef.current) cancelAudioRef.current();
     cancelAudioRef.current = playMockVoice(setIsAudioPlaying);
+    playRandomVoice();
     log("character", "mock_voice", `playing=${character.id}`);
   }, [character.id, log]);
 
@@ -144,13 +146,18 @@ export default function HomePage() {
         "choice",
         `choice=${choiceId} -> scene=${next ? next.id : "none"}`,
       );
-      if (next) setSceneId(next.id);
+      if (next) {
+        setSceneId(next.id);
+        playSound("choice_chime");
+        if (next.choices.length === 0) playSound("scene_end");
+      }
     },
     [story, scene.id, log],
   );
 
   const handleParentEnter = useCallback(() => {
     log("system", "parent_gate", `from scene=${scene.id}`);
+    playSound("parent_unlock");
     setUiMode("parent_home");
   }, [scene.id, log]);
 
