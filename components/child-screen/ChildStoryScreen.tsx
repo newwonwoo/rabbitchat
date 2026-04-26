@@ -145,7 +145,7 @@ export function ChildStoryScreen({
 
   // Background fallback chain:
   //   1. Local PNG at backgroundAsset.imageUrl (data/assets.ts)
-  //   2. /api/character-pose?label=... — match in public/assets/character/
+  //   2. /api/character?label=... — match in public/assets/character/
   //   3. Pexels searched
   //   4. null (emoji visual row stays)
   const bgLabel = backgroundAsset?.label ?? scene.placeId ?? "";
@@ -162,7 +162,7 @@ export function ChildStoryScreen({
   useEffect(() => {
     if (bgTier !== "character") return;
     let cancelled = false;
-    fetch(`/api/character-pose?label=${encodeURIComponent(bgLabel)}`)
+    fetch(`/api/character?label=${encodeURIComponent(bgLabel)}`)
       .then((r) => r.json())
       .then((j: { ok: boolean; url: string | null }) => {
         if (cancelled) return;

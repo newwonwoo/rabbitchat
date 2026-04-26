@@ -12,7 +12,7 @@ type Props = {
   onPress: (choiceId: string) => void;
 };
 
-// In-process per-label cache to avoid re-hitting /api/character-pose
+// In-process per-label cache to avoid re-hitting /api/character
 // every render.
 const labelCache = new Map<string, string | null>();
 
@@ -21,7 +21,7 @@ async function findInCharacterFolder(label: string): Promise<string | null> {
   if (labelCache.has(label)) return labelCache.get(label)!;
   try {
     const res = await fetch(
-      `/api/character-pose?label=${encodeURIComponent(label)}`,
+      `/api/character?label=${encodeURIComponent(label)}`,
     );
     if (!res.ok) {
       labelCache.set(label, null);
@@ -39,7 +39,7 @@ async function findInCharacterFolder(label: string): Promise<string | null> {
 
 // Visual fallback chain (addendum §4.1 — emoji is the LAST resort):
 //   1. Local PNG at asset.imageUrl
-//   2. /api/character-pose?label=<parentLabel>  — fuzzy match in
+//   2. /api/character?label=<parentLabel>  — fuzzy match in
 //      public/assets/character/ (where the parent drops everything)
 //   3. Pexels-searched image (license-safe auto fetch)
 //   4. Emoji

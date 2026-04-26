@@ -16,7 +16,7 @@ type Props = {
 };
 
 // Resolution chain — no exact filename required:
-//   1. /api/character-pose?mood=<m>  → fuzzy-matches whatever PNG the
+//   1. /api/character?mood=<m>  → fuzzy-matches whatever PNG the
 //      parent uploaded (kkang_happy.png, 행복.png, kkangchong_smile_v2.png ...)
 //   2. IndexedDB blob written by the in-app slice tool
 //   3. Hard-coded /assets/character/kkang_<mood>.png (legacy strict path)
@@ -45,7 +45,7 @@ async function fetchPoseUrl(mood: CharacterMood): Promise<string | null> {
   if (apiUrlCache.has(mood)) return apiUrlCache.get(mood)!;
   try {
     const res = await fetch(
-      `/api/character-pose?mood=${encodeURIComponent(mood)}`,
+      `/api/character?mood=${encodeURIComponent(mood)}`,
     );
     if (!res.ok) {
       apiUrlCache.set(mood, null);
