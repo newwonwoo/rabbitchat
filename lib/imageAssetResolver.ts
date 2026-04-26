@@ -52,6 +52,31 @@ export function pickChoiceAssets(objects: string[]): VisualAsset[] {
   return out;
 }
 
+// Pick a scene-specific background by checking, in order:
+//   1. exact asset id from the placeId (e.g. "kinder_lunch" → bg_lunch_table)
+//   2. keyword match on placeId
+//   3. keyword match on parent summary (Korean)
+//   4. fallback by theme name
+export function pickSceneBackground(
+  placeId: string,
+  parentSummary: string,
+  themeName: string,
+): VisualAsset {
+  // Direct id with bg_ prefix
+  const direct = findAsset(`bg_${placeId}`);
+  if (direct) return direct;
+  // Keyword on placeId
+  const byPlace = findAssetByKeyword(placeId);
+  if (byPlace && byPlace.kind === "background") return byPlace;
+  // Keyword inside the parent summary
+  for (const word of parentSummary.split(/[\s,.\-—]+/)) {
+    const a = findAssetByKeyword(word);
+    if (a && a.kind === "background") return a;
+  }
+  // Fallback to theme-name match
+  return pickBackgroundAsset(themeName);
+}
+
 export function resolveAssetsForStory(
   input: ImageAssetResolveInput,
 ): ImageAssetResolveOutput {

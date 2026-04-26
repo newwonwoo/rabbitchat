@@ -15,7 +15,7 @@ import { characters } from "@/data/characters";
 import { themes } from "@/data/themes";
 import { playMockVoice } from "@/lib/audioEngine";
 import {
-  pickBackgroundAsset,
+  pickSceneBackground,
   resolveChoiceAssetMap,
 } from "@/lib/imageAssetResolver";
 import { playRandomVoice, playSound } from "@/lib/soundEngine";
@@ -244,7 +244,11 @@ export default function HomePage() {
   }, []);
 
   if (uiMode === "child") {
-    const backgroundAsset = pickBackgroundAsset(theme.name);
+    const backgroundAsset = pickSceneBackground(
+      scene.placeId,
+      scene.parentSummary,
+      theme.name,
+    );
     const choiceAssets = resolveChoiceAssetMap(scene.choices);
     return (
       <ChildStoryScreen
