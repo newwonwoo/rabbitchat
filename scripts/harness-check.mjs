@@ -114,19 +114,25 @@ for (const dir of CHILD_DIRS) {
   }
 }
 
+// Files where parent has explicitly opted to render labels on the child
+// screen (parent override of harness §6.2). Documented in commit history.
+const PARENT_LEAK_EXEMPTIONS = new Set([
+  path.join("components", "child-screen", "ChoiceImageButton.tsx"),
+]);
+
 // 3. parentLabel / parentSummary rendered in child-screen / character JSX.
 for (const dir of CHILD_DIRS) {
   for (const file of walk(path.join(root, dir))) {
+    const rel = path.relative(root, file);
+    if (PARENT_LEAK_EXEMPTIONS.has(rel)) continue;
     const lines = readLines(file);
     lines.forEach((line, i) => {
       const trimmed = line.trim();
       if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
-      // Allowed: aria-label={choice.parentLabel}
       const stripped = line.replace(/aria-label=\{[^}]*\}/g, "");
-      // Forbidden: {choice.parentLabel} or {scene.parentSummary} as visible
       if (/\{[^}]*\.(parentLabel|parentSummary)[^}]*\}/.test(stripped)) {
         violations.push(
-          `[parent-leak] ${path.relative(root, file)}:${i + 1}: ${trimmed}`,
+          `[parent-leak] ${rel}:${i + 1}: ${trimmed}`,
         );
       }
     });

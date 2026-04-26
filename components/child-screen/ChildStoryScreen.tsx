@@ -7,6 +7,7 @@ import { ParentGate } from "@/components/child-screen/ParentGate";
 import { KkangchongCharacter } from "@/components/character/KkangchongCharacter";
 import { FOOD_SHEET, type CISpriteFrame } from "@/lib/ciSheet";
 import { useSearchedImage } from "@/lib/imageSearcher";
+import { isUserGestureUnlocked, unlockAudio } from "@/lib/soundEngine";
 import type { VisualAsset } from "@/types/asset";
 import type { Character, CharacterMood } from "@/types/character";
 import type { Scene } from "@/types/story";
@@ -60,22 +61,38 @@ export function ChildStoryScreen({
     return () => clearTimeout(t);
   }, [scene.id]);
 
+  const [needsTap, setNeedsTap] = useState(!isUserGestureUnlocked());
+
   // Pre-recorded scene voice (parent's own mp3) — handoff §1.2.
-  // Plays directly via HTML5 Audio, skips TTS entirely. If the file
-  // is missing or autoplay is blocked we just stay silent.
+  // Browsers block audio until first user gesture; we track that and
+  // defer playback if needed.
   useEffect(() => {
     if (!scene.audioFile) return;
     if (typeof window === "undefined") return;
+    if (!isUserGestureUnlocked()) {
+      // Will play after the user taps the start overlay.
+      return;
+    }
     const audio = new Audio(scene.audioFile);
     audio.volume = 1.0;
     void audio.play().catch(() => {
-      // file missing / autoplay blocked — silent
+      // file missing — silent
     });
     return () => {
       audio.pause();
       audio.currentTime = 0;
     };
-  }, [scene.audioFile]);
+  }, [scene.audioFile, needsTap]);
+
+  const handleStartTap = () => {
+    unlockAudio();
+    setNeedsTap(false);
+    // Replay scene audio now that gesture is unlocked
+    if (scene.audioFile && typeof window !== "undefined") {
+      const audio = new Audio(scene.audioFile);
+      void audio.play().catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     if (isAudioPlaying || transitionMood) return;
@@ -140,6 +157,23 @@ export function ChildStoryScreen({
       aria-label="child-story"
       className="relative flex min-h-screen flex-col items-center justify-between overflow-hidden bg-gradient-to-b from-kkang-ivory via-kkang-cream to-kkang-beige px-6 pb-10 pt-6"
     >
+      {needsTap ? (
+        <button
+          type="button"
+          onClick={handleStartTap}
+          aria-label="시작하기"
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-kkang-ivory/95 backdrop-blur-sm"
+        >
+          <span aria-hidden className="text-9xl">🐰</span>
+          <span className="mt-6 text-2xl font-bold text-kkang-ink">
+            화면을 한 번 터치해 주세요
+          </span>
+          <span className="mt-2 text-sm text-kkang-ink/60">
+            소리를 켜기 위해 필요해요
+          </span>
+        </button>
+      ) : null}
+
       {showBigBg && bgSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

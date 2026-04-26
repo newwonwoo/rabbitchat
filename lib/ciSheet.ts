@@ -24,15 +24,18 @@ export const CHARACTER_SHEET = {
   src: "/assets/ci/character-sheet.png",
   intrinsicW: 1448,
   intrinsicH: 1086,
+  // 6 expression poses sit in the middle band of the sheet, ABOVE the
+  // MOTION NOTES section. Height was previously 355 which dragged the
+  // motion-note caption text into the crop — fixed to ~225 to clip just
+  // the pose body. If a pose still feels off-center, tweak the matching
+  // entry's x/y/w/h here only.
   frames: {
-    // 6 expression poses live in the middle-bottom band of the sheet.
-    // Roughly y=600..955, each pose ~165 px wide, JUMPING + SLEEPY a bit wider.
-    happy: { x: 60, y: 600, w: 170, h: 355 },
-    listening: { x: 235, y: 600, w: 170, h: 355 },
-    waving: { x: 410, y: 600, w: 180, h: 355 },
-    thinking: { x: 595, y: 600, w: 170, h: 355 },
-    jumping: { x: 770, y: 600, w: 200, h: 355 },
-    sleepy: { x: 985, y: 600, w: 200, h: 355 },
+    happy: { x: 60, y: 575, w: 170, h: 230 },
+    listening: { x: 235, y: 575, w: 170, h: 230 },
+    waving: { x: 410, y: 575, w: 180, h: 230 },
+    thinking: { x: 595, y: 575, w: 170, h: 230 },
+    jumping: { x: 770, y: 575, w: 200, h: 230 },
+    sleepy: { x: 970, y: 575, w: 200, h: 230 },
   } satisfies Record<string, CISpriteFrame>,
 } as const;
 

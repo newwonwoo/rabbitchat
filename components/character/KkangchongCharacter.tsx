@@ -24,10 +24,10 @@ type Props = {
 // Mood mapping: see lib/ciSheet.ts CHARACTER_SHEET.frames.
 
 const SIZE_PX: Record<KkangchongSize, number> = {
-  sm: 160,
-  md: 220,
-  lg: 280,
-  xl: 360,
+  sm: 240,
+  md: 360,
+  lg: 540,
+  xl: 720,
 };
 
 const BODY_ANIM: Record<CharacterMood, string> = {

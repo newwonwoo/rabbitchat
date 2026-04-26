@@ -6,6 +6,40 @@
 
 import { loadPreference } from "@/lib/preferenceEngine";
 
+// Browsers block audio playback until the user interacts with the page.
+// We track whether the gesture has happened so the first scene's voice
+// can wait if needed.
+let userGestureHappened = false;
+const pendingPlayQueue: Array<() => void> = [];
+
+export function isUserGestureUnlocked(): boolean {
+  return userGestureHappened;
+}
+
+export function unlockAudio(): void {
+  if (userGestureHappened) return;
+  userGestureHappened = true;
+  // Drain any deferred plays
+  while (pendingPlayQueue.length) {
+    const fn = pendingPlayQueue.shift();
+    if (fn) {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+export function whenUnlocked(fn: () => void): void {
+  if (userGestureHappened) {
+    fn();
+  } else {
+    pendingPlayQueue.push(fn);
+  }
+}
+
 export type SoundId =
   | "tap_pop"        // any tap / button click
   | "choice_chime"   // successful choice selected
