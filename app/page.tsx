@@ -19,6 +19,7 @@ import { stories } from "@/data/stories";
 import { themes } from "@/data/themes";
 import { loadProfile } from "@/lib/profile";
 import { playMockVoice } from "@/lib/audioEngine";
+import { loadPublishedStories } from "@/lib/storage/customStoryStore";
 import {
   pickSceneBackground,
   resolveChoiceAssetMap,
@@ -256,19 +257,22 @@ export default function HomePage() {
   }
 
   if (uiMode === "home") {
-    const todayStory = stories[0];
-    const libraryStories = stories.slice(1);
+    const published = loadPublishedStories();
+    const todayStory = published[0] ?? null;
+    const libraryStories = published.slice(1);
     return (
       <HomeScreen
         childName={childName}
         todayStory={todayStory}
         libraryStories={libraryStories}
         onPickStory={(s) => {
+          // For published custom stories we set the scene/story directly.
+          // The themeId may not match a registered theme — that's OK,
+          // ChildStoryScreen renders from the scene we set.
+          setSceneId(s.startSceneId);
+          // try to align theme if matches
           const idx = themes.findIndex((t) => t.id === s.themeId);
-          if (idx >= 0) {
-            setThemeIdx(idx);
-            setSceneId(s.startSceneId);
-          }
+          if (idx >= 0) setThemeIdx(idx);
           setUiMode("child");
         }}
         onParentEnter={handleParentEnter}

@@ -8,7 +8,7 @@ import type { Story } from "@/types/story";
 
 type Props = {
   childName: string;
-  todayStory: Story;
+  todayStory: Story | null;
   libraryStories: Story[];
   onPickStory: (story: Story) => void;
   onParentEnter: () => void;
@@ -18,6 +18,11 @@ type Props = {
 // Top: greeting with child's name + 깡총이 mini avatar.
 // Hero: "오늘의 이야기" big card.
 // Below: "다른 이야기" library grid.
+//
+// Empty state: when there's no published story (todayStory == null) we
+// show a 깡총이 holding an empty book + a soft message asking the
+// parent to create one. The 🔒 parent gate stays in the corner so the
+// adult can long-press into the authoring wizard.
 export function HomeScreen({
   childName,
   todayStory,
@@ -52,34 +57,67 @@ export function HomeScreen({
           안녕, {childName || "친구"}야!
         </h1>
         <p className="mt-1 text-base text-kkang-ink/70">
-          오늘은 깡총이랑 어떤 이야기 해볼까?
+          {todayStory
+            ? "오늘은 깡총이랑 어떤 이야기 해볼까?"
+            : "깡총이가 새 이야기를 기다리고 있어요"}
         </p>
       </header>
 
-      {/* Hero — Today's story */}
-      <section className="mx-auto mt-8 w-full max-w-2xl">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-kkang-ink/50">
-          오늘의 이야기
-        </h2>
-        <HeroCard story={todayStory} onPick={() => onPickStory(todayStory)} />
-      </section>
+      {todayStory ? (
+        <>
+          {/* Hero — Today's story */}
+          <section className="mx-auto mt-8 w-full max-w-2xl">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-kkang-ink/50">
+              오늘의 이야기
+            </h2>
+            <HeroCard story={todayStory} onPick={() => onPickStory(todayStory)} />
+          </section>
 
-      {/* Library grid */}
-      <section className="mx-auto mt-8 w-full max-w-2xl">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-kkang-ink/50">
-          다른 이야기
-        </h2>
-        <div className="grid grid-cols-2 gap-4">
-          {libraryStories.map((s) => (
-            <LibraryCard
-              key={s.id}
-              story={s}
-              onPick={() => onPickStory(s)}
-            />
-          ))}
-        </div>
-      </section>
+          {/* Library grid */}
+          {libraryStories.length > 0 ? (
+            <section className="mx-auto mt-8 w-full max-w-2xl">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-kkang-ink/50">
+                다른 이야기
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                {libraryStories.map((s) => (
+                  <LibraryCard key={s.id} story={s} onPick={() => onPickStory(s)} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <EmptyHome childName={childName} />
+      )}
     </main>
+  );
+}
+
+function EmptyHome({ childName }: { childName: string }) {
+  return (
+    <section className="mx-auto mt-12 flex w-full max-w-xl flex-col items-center text-center">
+      <div className="relative mb-6">
+        <span aria-hidden className="text-[120px]">🐰</span>
+        <span aria-hidden className="absolute -right-4 bottom-2 text-5xl">📖</span>
+      </div>
+      <h2 className="text-2xl font-bold text-kkang-ink">
+        아직 이야기가 없어요
+      </h2>
+      <p className="mt-2 max-w-md text-base leading-relaxed text-kkang-ink/70">
+        엄마·아빠가 첫 이야기를 만들어 주시면
+        <br />
+        깡총이가 {childName || "친구"}이를 위해 들려드릴게요.
+      </p>
+      <div className="mt-6 rounded-2xl bg-white/80 p-4 text-sm text-kkang-ink/70 shadow-soft">
+        <div className="font-semibold text-kkang-ink">📖 부모님께</div>
+        <div className="mt-1 text-xs">
+          우상단의 🔒 아이콘을 3초간 눌러 부모 화면으로 들어간 뒤
+          <br />
+          <strong>"이야기 만들기"</strong>에서 첫 이야기를 만들어 주세요.
+        </div>
+      </div>
+    </section>
   );
 }
 
