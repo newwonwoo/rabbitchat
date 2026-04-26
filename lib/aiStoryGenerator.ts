@@ -15,16 +15,53 @@ import { CHARACTER_VOICE_SYSTEM_PROMPT, sanitizeCharacterVoice } from "@/lib/cha
 import { getProviderMode } from "@/lib/providers";
 import type { Choice, Scene, Story } from "@/types/story";
 
+// Pedagogical goals — addendum-aligned (handoff §2.2). Multiple OK.
+export type AuthorGoal = "회상" | "순서" | "어휘" | "감정" | "사회성";
+
+// Variation strategy (handoff §2.2 — 반복 40% / 변주 40% / 신규 20%).
+export type AuthorRepeatMode = "repeat" | "variation" | "new";
+
 export type AuthorInput = {
-  // Natural-language description from the parent. Either this OR the
-  // structured fields below, or both.
-  rawText?: string;
-  // Optional structured form
-  placeName?: string;
-  eventText?: string;
+  // --- child profile (from settings) ---
   childName: string;
   childAgeMonths?: number;
+
+  // --- natural-language fallback ---
+  rawText?: string;
+
+  // --- 장소 ---
+  placeType?: string;          // 어린이집 / 마트 / 공원 / 집 / ...
+  placeDetail?: string;        // 교실 / 과일 코너 / 침실 ...
+
+  // --- 있었던 일 ---
+  eventText?: string;
+
+  // --- 함께한 사람 ---
+  friends?: string[];          // ["시현이"]
+  others?: string[];           // ["선생님", "엄마", ...]
+
+  // --- 아이 행동 (시나리오 분기 후보) ---
+  childActions?: string[];     // ["블록을 쌓았어", "자동차라고 말했어", ...]
+
+  // --- 좋아한 것 (반복 노출 어휘) ---
+  childPreferences?: string[]; // ["블록", "자동차", "시현이"]
+  // legacy single field kept for backward compat
   childPreference?: string;
+
+  // --- 아이 실제 말 ---
+  childQuote?: string;         // "자동차 만들었어"
+
+  // --- 감정 ---
+  emotions?: string[];         // ["신남", "뿌듯함"]
+
+  // --- 목표 ---
+  goals?: AuthorGoal[];        // ["회상", "순서", "어휘"]
+
+  // --- 반복 방식 ---
+  repeatMode?: AuthorRepeatMode;
+
+  // legacy: single placeName for older callers
+  placeName?: string;
 };
 
 export class AIGeneratorError extends Error {
@@ -64,57 +101,146 @@ function getVendor(): LLMVendor {
 }
 
 const SCHEMA_INSTRUCTION = `
-Respond with ONLY a valid JSON object matching this exact schema:
+JSON 스키마 (이 형식만 출력. 마크다운 펜스/주석/설명 금지):
 
 {
-  "title": string (max 12 chars, Korean),
-  "subtitle": string (max 20 chars, Korean, e.g. "어린이집 다녀와서"),
-  "tags": array of one or more from ["회상","모험","일상","잠자기","먹기","놀이"],
-  "estimatedMinutes": integer between 2 and 7,
-  "coverImageQuery": string (short English phrase for Pexels image search, e.g. "korean kindergarten classroom"),
-  "themeId": one of "theme_today","theme_mart","theme_park","theme_bedtime","theme_morning","theme_book",
+  "title": "한국어, 8자 이내",
+  "subtitle": "한국어, 20자 이내, 예: '어린이집 다녀와서'",
+  "tags": ["회상","모험","일상","잠자기","먹기","놀이"] 중 1개 이상,
+  "estimatedMinutes": 2~7 정수,
+  "coverImageQuery": "Pexels 영어 키워드, 예: 'korean kindergarten classroom'",
+  "themeId": "theme_today" | "theme_mart" | "theme_park" | "theme_bedtime" | "theme_morning" | "theme_book",
   "scenes": [
     {
-      "id": "s1" | "s2" | ... (sequential),
-      "placeId": short lowercase English id (e.g. "kinder_lunch"),
-      "visual": string of 1-3 emojis only (no Korean text),
-      "spokenLine": string in Korean — what 깡총이 says when this scene loads,
-      "parentSummary": string in Korean — one-line note for the parent log,
+      "id": "s1" | "s2" | ...,
+      "placeId": "kinder_lunch" 같은 영어 lowercase,
+      "visual": "이모지 1~3개만 (한글 금지)",
+      "spokenLine": "장면 진입 시 깡총이가 말하는 한국어 한 문장",
+      "parentSummary": "부모 로그용 한국어 한 줄",
       "choices": [
         {
-          "id": short lowercase id,
-          "emoji": single emoji character,
-          "parentLabel": short Korean label (2-5 chars),
-          "responseLine": string in Korean — what 깡총이 says immediately after this choice is tapped,
-          "nextSceneId": next scene id or null on the final scene
+          "id": "lowercase id",
+          "emoji": "이모지 1자",
+          "parentLabel": "한국어 2~6자",
+          "responseLine": "이 선택을 누르면 깡총이가 하는 한국어 한 문장",
+          "nextSceneId": "다음 scene id 또는 null"
         }
       ]
     }
   ]
 }
 
-Story rules:
-- 3 to 5 scenes
-- Each scene: 2 to 3 choices (the final scene may have an empty choices array to end the story)
-- Korean lines must be very short and warm — like a picture book, suitable for 27-month-old
-- Use the child's actual name (provided below) inside spokenLine and responseLine where natural
-- Use 깡총이 voice throughout — never refer to 엄마 or use mother-style phrases
-- All emojis must be single characters; no Korean text inside the visual / emoji fields
-- nextSceneId on the LAST scene's choices must be null (or the choices array can be empty)
-- Output ONLY the JSON, no markdown fences, no commentary
+【시나리오 작가 룰 — 영화 시나리오 수준으로 정성껏】
+
+1. 톤
+- 동화책 한 페이지처럼 따뜻하고 운율감 있는 한국어
+- 27개월 아이가 알아듣기 쉬운 짧은 문장 (한 문장 6~10어절)
+- 깡총이는 엄마가 아니다. "엄마가~", "엄마 말~" 절대 금지. "내가~", "깡총이가~", "우리 같이~"
+
+2. 자녀 개인화 (제공된 입력 그대로 활용)
+- 자녀 이름은 spokenLine/responseLine에 자연스럽게 포함
+- 함께한 사람(친구·선생님 등) 이름을 그대로 인용
+- 아이가 실제로 한 말이 있으면 1번 이상 인용 또는 재진술 ("아까 [실제 말] 했지!")
+- 좋아한 것은 어휘 반복 노출의 핵심 — 여러 scene/choice에 자연스럽게 등장
+- 감정(신남/뿌듯함 등)을 spokenLine에서 부드럽게 미러링
+
+3. 분기 설계 (handoff §3 — 풍부한 분기, 단순한 화면)
+- 장면 3~5개
+- 한 화면 노출 선택지는 2~3개 (사람이 한 행동·좋아한 것 중심)
+- 각 choice의 responseLine은 그 선택을 했을 때 깡총이의 따뜻한 반응 + 어휘 재진술
+- 마지막 scene은 choices 빈 배열 OR 모든 choice의 nextSceneId가 null
+
+4. 목표 반영
+- 회상 목표: 순서를 묻는 질문 ("먼저 무엇을 했지?")
+- 순서 목표: "그 다음에는?" 같이 시간 흐름 강조
+- 어휘 목표: 좋아한 것 + 행동 어휘를 다양한 문장에 반복 노출
+- 감정 목표: "기분이 어땠어?" 같은 감정 묻기 1회 이상
+- 사회성 목표: 함께한 사람과의 상호작용 묻기
+
+5. 반복 방식
+- variation: 비슷한 장소·이벤트의 변주 (다른 친구·다른 사물)
+- repeat: 같은 장소·같은 사물 그대로 반복 (운율 강화)
+- new: 완전 신규 장소·이벤트 (도전 어휘)
+
+6. visual 이모지
+- 장면 분위기를 나타내는 이모지 1~3개. 한글 텍스트 절대 금지
+
+7. coverImageQuery
+- Pexels에 잘 검색되는 짧은 영어 키워드. "korean kindergarten classroom kids"
+
+8. 출력은 오직 JSON 객체. 다른 텍스트 일체 금지.
 `.trim();
+
+function fmtList(label: string, items?: string[] | string): string | null {
+  if (!items) return null;
+  if (Array.isArray(items)) {
+    if (items.length === 0) return null;
+    return `${label}: ${items.join(", ")}`;
+  }
+  if (!items.trim()) return null;
+  return `${label}: ${items}`;
+}
 
 function buildUserMessage(input: AuthorInput): string {
   const lines: string[] = [];
-  lines.push(`자녀 이름: ${input.childName}`);
-  if (input.childAgeMonths) lines.push(`자녀 월령: ${input.childAgeMonths}개월`);
-  if (input.childPreference) lines.push(`자녀 선호: ${input.childPreference}`);
-  if (input.placeName) lines.push(`장소: ${input.placeName}`);
-  if (input.eventText) lines.push(`있었던 일: ${input.eventText}`);
+  lines.push(`[자녀] ${input.childName}` + (input.childAgeMonths ? ` (${input.childAgeMonths}개월)` : ""));
+
+  // 장소
+  const place: string[] = [];
+  if (input.placeType) place.push(input.placeType);
+  if (input.placeDetail) place.push(input.placeDetail);
+  if (place.length === 0 && input.placeName) place.push(input.placeName);
+  if (place.length) lines.push(`[장소] ${place.join(" · ")}`);
+
+  // 있었던 일
+  if (input.eventText) lines.push(`[있었던 일] ${input.eventText}`);
+
+  // 함께한 사람
+  const peopleLines: string[] = [];
+  const f = fmtList("친구", input.friends);
+  const o = fmtList("기타", input.others);
+  if (f) peopleLines.push(f);
+  if (o) peopleLines.push(o);
+  if (peopleLines.length) lines.push(`[함께한 사람] ${peopleLines.join(" / ")}`);
+
+  // 행동
+  const actions = fmtList("아이 행동", input.childActions);
+  if (actions) lines.push(`[${actions}]`);
+
+  // 좋아한 것
+  const prefs: string[] = [];
+  if (input.childPreferences && input.childPreferences.length) prefs.push(...input.childPreferences);
+  if (input.childPreference) prefs.push(input.childPreference);
+  if (prefs.length) lines.push(`[좋아한 것] ${prefs.join(", ")}`);
+
+  // 아이 실제 말
+  if (input.childQuote) lines.push(`[아이 실제 말] "${input.childQuote}"`);
+
+  // 감정
+  const emo = fmtList("감정", input.emotions);
+  if (emo) lines.push(`[${emo}]`);
+
+  // 목표
+  const goals = fmtList("목표", input.goals);
+  if (goals) lines.push(`[${goals}]`);
+
+  // 반복 방식
+  if (input.repeatMode) {
+    const modeLabel: Record<AuthorRepeatMode, string> = {
+      repeat: "동일 반복 (운율 강화)",
+      variation: "비슷한 이야기 변주",
+      new: "완전 신규",
+    };
+    lines.push(`[반복 방식] ${modeLabel[input.repeatMode]}`);
+  }
+
+  // 자유 메모
   if (input.rawText) {
-    lines.push("부모 자유 메모:");
+    lines.push("");
+    lines.push("[부모 자유 메모]");
     lines.push(input.rawText);
   }
+
   return lines.join("\n");
 }
 

@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AIGeneratorError,
   generateStoryWithAI,
+  type AuthorGoal,
   type AuthorInput,
+  type AuthorRepeatMode,
 } from "@/lib/aiStoryGenerator";
 import { loadProfile } from "@/lib/profile";
 import { getProviderMode } from "@/lib/providers";
@@ -22,17 +24,52 @@ import {
 } from "@/lib/storyPipeline";
 import type { Story } from "@/types/story";
 
+const PLACE_TYPES = ["어린이집", "마트", "공원", "집", "친척집", "병원", "산", "기타"];
+
+const COMMON_EMOTIONS = ["신남", "뿌듯함", "즐거움", "호기심", "조금 슬픔", "졸림", "당황"];
+
+const COMMON_GOALS: { id: AuthorGoal; label: string; hint: string }[] = [
+  { id: "회상", label: "회상", hint: "오늘 있었던 일 떠올리기" },
+  { id: "순서", label: "순서 말하기", hint: "먼저, 그 다음, 마지막" },
+  { id: "어휘", label: "어휘 확장", hint: "새 단어 반복 노출" },
+  { id: "감정", label: "감정 표현", hint: "기분 묻기" },
+  { id: "사회성", label: "사회성", hint: "친구·가족 상호작용" },
+];
+
+const REPEAT_MODES: { id: AuthorRepeatMode; label: string; hint: string }[] = [
+  { id: "variation", label: "비슷한 변주", hint: "같은 톤, 다른 사물·친구" },
+  { id: "repeat", label: "동일 반복", hint: "운율 강화 — 같은 이야기 또 듣기" },
+  { id: "new", label: "완전 신규", hint: "도전 어휘 + 새 장면" },
+];
+
 type Step = "input" | "generating" | "review" | "warming" | "test";
 
 export function StoryBuilder() {
   const [step, setStep] = useState<Step>("input");
-  const [inputMode, setInputMode] = useState<"natural" | "form">("natural");
-  const [rawText, setRawText] = useState(
-    "원우가 어린이집에서 친구랑 블록 놀이를 했고 점심에 김밥을 먹었어",
+
+  // Rich form state — see lib/aiStoryGenerator.ts AuthorInput
+  const [placeType, setPlaceType] = useState("어린이집");
+  const [placeDetail, setPlaceDetail] = useState("교실");
+  const [eventText, setEventText] = useState(
+    "친구랑 블록으로 자동차를 만들었어",
   );
-  const [placeName, setPlaceName] = useState("어린이집");
-  const [eventText, setEventText] = useState("친구랑 놀고 점심 먹음");
-  const [childPreference, setChildPreference] = useState("바나나 좋아함");
+  const [friends, setFriends] = useState<string[]>(["시현이"]);
+  const [others, setOthers] = useState<string[]>(["선생님"]);
+  const [childActions, setChildActions] = useState<string[]>([
+    "블록을 쌓았어",
+    "자동차라고 말했어",
+    "친구에게 보여줬어",
+  ]);
+  const [childPreferences, setChildPreferences] = useState<string[]>([
+    "블록",
+    "자동차",
+    "시현이",
+  ]);
+  const [childQuote, setChildQuote] = useState("자동차 만들었어");
+  const [emotions, setEmotions] = useState<string[]>(["신남", "뿌듯함"]);
+  const [goals, setGoals] = useState<AuthorGoal[]>(["회상", "순서", "어휘"]);
+  const [repeatMode, setRepeatMode] = useState<AuthorRepeatMode>("variation");
+  const [rawText, setRawText] = useState("");
 
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<{
@@ -61,9 +98,18 @@ export function StoryBuilder() {
     const input: AuthorInput = {
       childName: profile.name,
       childAgeMonths: profile.ageMonths,
-      ...(inputMode === "natural"
-        ? { rawText }
-        : { placeName, eventText, childPreference }),
+      placeType: placeType.trim() || undefined,
+      placeDetail: placeDetail.trim() || undefined,
+      eventText: eventText.trim() || undefined,
+      friends: friends.filter((s) => s.trim().length > 0),
+      others: others.filter((s) => s.trim().length > 0),
+      childActions: childActions.filter((s) => s.trim().length > 0),
+      childPreferences: childPreferences.filter((s) => s.trim().length > 0),
+      childQuote: childQuote.trim() || undefined,
+      emotions: emotions.filter((s) => s.trim().length > 0),
+      goals,
+      repeatMode,
+      rawText: rawText.trim() || undefined,
     };
 
     try {
@@ -158,16 +204,30 @@ export function StoryBuilder() {
 
       {step === "input" ? (
         <InputStep
-          mode={inputMode}
-          setMode={setInputMode}
-          rawText={rawText}
-          setRawText={setRawText}
-          placeName={placeName}
-          setPlaceName={setPlaceName}
+          placeType={placeType}
+          setPlaceType={setPlaceType}
+          placeDetail={placeDetail}
+          setPlaceDetail={setPlaceDetail}
           eventText={eventText}
           setEventText={setEventText}
-          childPreference={childPreference}
-          setChildPreference={setChildPreference}
+          friends={friends}
+          setFriends={setFriends}
+          others={others}
+          setOthers={setOthers}
+          childActions={childActions}
+          setChildActions={setChildActions}
+          childPreferences={childPreferences}
+          setChildPreferences={setChildPreferences}
+          childQuote={childQuote}
+          setChildQuote={setChildQuote}
+          emotions={emotions}
+          setEmotions={setEmotions}
+          goals={goals}
+          setGoals={setGoals}
+          repeatMode={repeatMode}
+          setRepeatMode={setRepeatMode}
+          rawText={rawText}
+          setRawText={setRawText}
           onGenerate={onGenerate}
           generating={generating}
           generationError={generationError}
@@ -205,95 +265,212 @@ export function StoryBuilder() {
 // --- Step components ------------------------------------------------------
 
 function InputStep(props: {
-  mode: "natural" | "form";
-  setMode: (m: "natural" | "form") => void;
-  rawText: string;
-  setRawText: (s: string) => void;
-  placeName: string;
-  setPlaceName: (s: string) => void;
+  placeType: string;
+  setPlaceType: (s: string) => void;
+  placeDetail: string;
+  setPlaceDetail: (s: string) => void;
   eventText: string;
   setEventText: (s: string) => void;
-  childPreference: string;
-  setChildPreference: (s: string) => void;
+  friends: string[];
+  setFriends: (v: string[]) => void;
+  others: string[];
+  setOthers: (v: string[]) => void;
+  childActions: string[];
+  setChildActions: (v: string[]) => void;
+  childPreferences: string[];
+  setChildPreferences: (v: string[]) => void;
+  childQuote: string;
+  setChildQuote: (s: string) => void;
+  emotions: string[];
+  setEmotions: (v: string[]) => void;
+  goals: AuthorGoal[];
+  setGoals: (v: AuthorGoal[]) => void;
+  repeatMode: AuthorRepeatMode;
+  setRepeatMode: (m: AuthorRepeatMode) => void;
+  rawText: string;
+  setRawText: (s: string) => void;
   onGenerate: () => void;
   generating: boolean;
   generationError: { msg: string; hint?: string } | null;
 }) {
   const realMode = getProviderMode() === "real";
+
   return (
-    <div className="rounded-2xl bg-white/70 p-4 shadow-soft">
-      <div className="mb-3 flex justify-end">
-        <div className="rounded-full bg-kkang-cream p-1 text-xs shadow-soft">
-          <button
-            type="button"
-            onClick={() => props.setMode("natural")}
-            className={`rounded-full px-3 py-1 ${props.mode === "natural" ? "bg-kkang-pink font-semibold" : ""}`}
-          >
-            자연어
-          </button>
-          <button
-            type="button"
-            onClick={() => props.setMode("form")}
-            className={`rounded-full px-3 py-1 ${props.mode === "form" ? "bg-kkang-pink font-semibold" : ""}`}
-          >
-            표준 입력
-          </button>
-        </div>
-      </div>
-
-      {props.mode === "natural" ? (
-        <label className="block text-sm">
-          <span className="block text-xs text-kkang-ink/60">아이의 하루를 자유롭게 적어 주세요</span>
-          <textarea
-            rows={4}
-            value={props.rawText}
-            onChange={(e) => props.setRawText(e.target.value)}
-            placeholder="예: 원우가 어린이집에서 친구랑 블록 놀이를 했고 점심에 김밥을 먹었어"
-            className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
-          />
-        </label>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 text-sm">
-          <label className="block">
-            <span className="block text-xs text-kkang-ink/60">장소</span>
-            <input
-              type="text"
-              value={props.placeName}
-              onChange={(e) => props.setPlaceName(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
-            />
-          </label>
-          <label className="block">
-            <span className="block text-xs text-kkang-ink/60">있었던 일</span>
-            <textarea
-              rows={3}
-              value={props.eventText}
-              onChange={(e) => props.setEventText(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
-            />
-          </label>
-          <label className="block">
-            <span className="block text-xs text-kkang-ink/60">아이의 선호 (선택)</span>
-            <input
-              type="text"
-              value={props.childPreference}
-              onChange={(e) => props.setChildPreference(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
-            />
-          </label>
-        </div>
-      )}
-
+    <div className="space-y-4">
       {!realMode ? (
-        <p className="mt-3 rounded-xl bg-yellow-100 p-2 text-xs text-yellow-900">
+        <p className="rounded-2xl bg-yellow-100 p-3 text-xs text-yellow-900 shadow-soft">
           현재 mock 모드입니다. AI 시나리오 생성은{" "}
           <code>NEXT_PUBLIC_PROVIDER=real</code> + <code>OPENAI_API_KEY</code>{" "}
           가 필요합니다.
         </p>
       ) : null}
 
+      {/* 장소 */}
+      <SectionCard icon="📍" title="장소" hint="어디에서 있었던 일인가요?">
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <label className="block">
+            <span className="block text-xs text-kkang-ink/60">장소 유형</span>
+            <select
+              value={props.placeType}
+              onChange={(e) => props.setPlaceType(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
+            >
+              {PLACE_TYPES.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="block text-xs text-kkang-ink/60">세부 공간</span>
+            <input
+              type="text"
+              value={props.placeDetail}
+              onChange={(e) => props.setPlaceDetail(e.target.value)}
+              placeholder="예: 교실"
+              className="mt-1 w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2"
+            />
+          </label>
+        </div>
+      </SectionCard>
+
+      {/* 있었던 일 */}
+      <SectionCard icon="📖" title="있었던 일" hint="시나리오의 핵심 이벤트">
+        <textarea
+          rows={2}
+          value={props.eventText}
+          onChange={(e) => props.setEventText(e.target.value)}
+          placeholder="예: 친구랑 블록으로 자동차를 만들었어"
+          className="w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2 text-sm"
+        />
+      </SectionCard>
+
+      {/* 함께한 사람 */}
+      <SectionCard icon="👥" title="함께한 사람" hint="이름이 시나리오에 그대로 등장합니다">
+        <div className="space-y-3">
+          <ChipInput
+            label="친구"
+            placeholder="시현이 (Enter)"
+            values={props.friends}
+            onChange={props.setFriends}
+            color="bg-kkang-pink/40"
+          />
+          <ChipInput
+            label="가족·선생님"
+            placeholder="선생님 (Enter)"
+            values={props.others}
+            onChange={props.setOthers}
+            color="bg-kkang-cream"
+          />
+        </div>
+      </SectionCard>
+
+      {/* 아이 행동 */}
+      <SectionCard icon="🎯" title="아이 행동" hint="여러 행동 → 분기 후보가 됩니다">
+        <ChipInput
+          label="행동"
+          placeholder="블록을 쌓았어 (Enter)"
+          values={props.childActions}
+          onChange={props.setChildActions}
+          color="bg-white"
+        />
+      </SectionCard>
+
+      {/* 좋아한 것 */}
+      <SectionCard icon="💗" title="좋아한 것" hint="어휘 반복 노출의 핵심">
+        <ChipInput
+          label="좋아한 것"
+          placeholder="블록 (Enter)"
+          values={props.childPreferences}
+          onChange={props.setChildPreferences}
+          color="bg-kkang-pink/30"
+        />
+      </SectionCard>
+
+      {/* 아이 실제 말 */}
+      <SectionCard icon="💬" title="아이 실제 말" hint="시나리오에 그대로 인용됩니다">
+        <input
+          type="text"
+          value={props.childQuote}
+          onChange={(e) => props.setChildQuote(e.target.value)}
+          placeholder='예: "자동차 만들었어"'
+          className="w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2 text-sm"
+        />
+      </SectionCard>
+
+      {/* 감정 */}
+      <SectionCard icon="😊" title="감정" hint="깡총이가 함께 느낍니다">
+        <ChipPicker
+          options={COMMON_EMOTIONS}
+          values={props.emotions}
+          onChange={props.setEmotions}
+          allowCustom
+        />
+      </SectionCard>
+
+      {/* 목표 */}
+      <SectionCard icon="🎓" title="목표" hint="AI가 시나리오에 반영합니다">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {COMMON_GOALS.map((g) => {
+            const active = props.goals.includes(g.id);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  if (active) props.setGoals(props.goals.filter((x) => x !== g.id));
+                  else props.setGoals([...props.goals, g.id]);
+                }}
+                className={`rounded-xl px-3 py-2 text-left text-sm transition-transform active:scale-[0.99] ${
+                  active
+                    ? "bg-kkang-pink font-semibold shadow-soft"
+                    : "bg-kkang-cream"
+                }`}
+              >
+                <div className="text-kkang-ink">{g.label}</div>
+                <div className="text-xs text-kkang-ink/60">{g.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      {/* 반복 방식 */}
+      <SectionCard icon="🔄" title="반복 방식" hint="handoff §2.2 — 반복 40% / 변주 40% / 신규 20%">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {REPEAT_MODES.map((m) => {
+            const active = props.repeatMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => props.setRepeatMode(m.id)}
+                className={`rounded-xl px-3 py-2 text-left text-sm ${
+                  active
+                    ? "bg-kkang-pink font-semibold shadow-soft"
+                    : "bg-kkang-cream"
+                }`}
+              >
+                <div className="text-kkang-ink">{m.label}</div>
+                <div className="text-xs text-kkang-ink/60">{m.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      {/* 자유 메모 (선택) */}
+      <SectionCard icon="📝" title="자유 메모" hint="추가 컨텍스트 (선택)">
+        <textarea
+          rows={2}
+          value={props.rawText}
+          onChange={(e) => props.setRawText(e.target.value)}
+          placeholder="추가로 알려줄 게 있으면 자유롭게…"
+          className="w-full rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2 text-sm"
+        />
+      </SectionCard>
+
       {props.generationError ? (
-        <p className="mt-3 rounded-xl bg-red-100 p-2 text-xs text-red-800">
+        <p className="rounded-2xl bg-red-100 p-3 text-xs text-red-800 shadow-soft">
           {props.generationError.msg}
           {props.generationError.hint ? (
             <span className="block text-red-600">{props.generationError.hint}</span>
@@ -305,10 +482,172 @@ function InputStep(props: {
         type="button"
         onClick={props.onGenerate}
         disabled={props.generating}
-        className="mt-4 rounded-xl bg-kkang-pink px-5 py-3 text-base font-semibold shadow-pop active:scale-[0.99] disabled:opacity-50"
+        className="w-full rounded-2xl bg-kkang-pink px-5 py-4 text-lg font-bold shadow-pop active:scale-[0.99] disabled:opacity-50"
       >
         🎬 AI로 시나리오 만들기
       </button>
+    </div>
+  );
+}
+
+// --- Reusable form pieces -------------------------------------------------
+
+function SectionCard({
+  icon,
+  title,
+  hint,
+  children,
+}: {
+  icon: string;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl bg-white p-5 shadow-card">
+      <header className="mb-3 flex items-baseline gap-2">
+        <span aria-hidden className="text-xl">{icon}</span>
+        <h3 className="text-base font-bold text-kkang-ink">{title}</h3>
+        {hint ? (
+          <span className="ml-auto text-xs text-kkang-ink/50">{hint}</span>
+        ) : null}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function ChipInput({
+  label,
+  placeholder,
+  values,
+  onChange,
+  color = "bg-kkang-cream",
+}: {
+  label: string;
+  placeholder: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  color?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const v = draft.trim();
+    if (!v) return;
+    if (values.includes(v)) {
+      setDraft("");
+      return;
+    }
+    onChange([...values, v]);
+    setDraft("");
+  };
+  return (
+    <div>
+      <div className="mb-1 text-xs text-kkang-ink/60">{label}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        {values.map((v) => (
+          <span
+            key={v}
+            className={`flex items-center gap-1 rounded-full ${color} px-3 py-1 text-sm shadow-soft`}
+          >
+            {v}
+            <button
+              type="button"
+              onClick={() => onChange(values.filter((x) => x !== v))}
+              aria-label={`${v} 삭제`}
+              className="rounded-full px-1 text-kkang-ink/50 hover:bg-white/30"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          onBlur={add}
+          placeholder={placeholder}
+          className="min-w-[140px] flex-1 rounded-full border border-kkang-beige bg-kkang-ivory px-3 py-1 text-sm focus:outline-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ChipPicker({
+  options,
+  values,
+  onChange,
+  allowCustom,
+}: {
+  options: string[];
+  values: string[];
+  onChange: (v: string[]) => void;
+  allowCustom?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const toggle = (v: string) => {
+    if (values.includes(v)) onChange(values.filter((x) => x !== v));
+    else onChange([...values, v]);
+  };
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => {
+          const active = values.includes(o);
+          return (
+            <button
+              key={o}
+              type="button"
+              onClick={() => toggle(o)}
+              className={`rounded-full px-3 py-1 text-sm shadow-soft ${
+                active ? "bg-kkang-pink font-semibold" : "bg-kkang-cream"
+              }`}
+            >
+              {o}
+            </button>
+          );
+        })}
+        {values.filter((v) => !options.includes(v)).map((v) => (
+          <span
+            key={v}
+            className="flex items-center gap-1 rounded-full bg-kkang-pink px-3 py-1 text-sm shadow-soft"
+          >
+            {v}
+            <button
+              type="button"
+              onClick={() => onChange(values.filter((x) => x !== v))}
+              aria-label={`${v} 삭제`}
+              className="rounded-full px-1 text-kkang-ink/60"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      {allowCustom ? (
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              const v = draft.trim();
+              if (v && !values.includes(v)) onChange([...values, v]);
+              setDraft("");
+            }
+          }}
+          placeholder="직접 입력 (Enter)"
+          className="mt-2 w-full rounded-full border border-kkang-beige bg-kkang-ivory px-3 py-1 text-sm"
+        />
+      ) : null}
     </div>
   );
 }
