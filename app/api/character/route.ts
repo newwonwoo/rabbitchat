@@ -164,6 +164,43 @@ export async function GET(req: Request) {
 
   const candidates = expandSynonyms(label);
 
+  // 3-pass priority — exact > prefix > substring. Within each pass we
+  // walk synonyms in order; first hit wins. This prevents action files
+  // (eatstrawberry.png) from outranking the actual object (starawberry.png)
+  // for label "strawberry".
+  const stripExt = (f: string) => f.replace(/\.[^.]+$/, "").toLowerCase();
+
+  // Pass 1 — basename equals synonym (e.g. "apple.png" for label "apple")
+  for (const syn of candidates) {
+    const lower = syn.toLowerCase();
+    const match = files.find((f) => stripExt(f) === lower);
+    if (match) {
+      return NextResponse.json({
+        ok: true,
+        url: `/assets/character/${match}`,
+        matched: match,
+        via: syn,
+        priority: "exact",
+      });
+    }
+  }
+
+  // Pass 2 — basename starts with synonym (e.g. "apple_v2.png")
+  for (const syn of candidates) {
+    const lower = syn.toLowerCase();
+    const match = files.find((f) => stripExt(f).startsWith(lower));
+    if (match) {
+      return NextResponse.json({
+        ok: true,
+        url: `/assets/character/${match}`,
+        matched: match,
+        via: syn,
+        priority: "prefix",
+      });
+    }
+  }
+
+  // Pass 3 — basename contains synonym anywhere (e.g. "eatapple.png")
   for (const syn of candidates) {
     const lower = syn.toLowerCase();
     const match = files.find((f) => f.toLowerCase().includes(lower));
@@ -173,6 +210,7 @@ export async function GET(req: Request) {
         url: `/assets/character/${match}`,
         matched: match,
         via: syn,
+        priority: "substring",
       });
     }
   }
