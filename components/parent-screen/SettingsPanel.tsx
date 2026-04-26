@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { CacheStats } from "@/components/parent-screen/CacheStats";
+import { CharacterSlicer } from "@/components/parent-screen/CharacterSlicer";
 import { MicTester } from "@/components/parent-screen/MicTester";
 import { loadPreference, savePreference } from "@/lib/preferenceEngine";
 
@@ -56,6 +57,8 @@ export function SettingsPanel({ onExportData, onDeleteData }: Props) {
           <li>· 음성 인식 API 사용하지 않음</li>
         </ul>
       </div>
+
+      <CharacterSlicer />
 
       <MicTester />
 

@@ -13,9 +13,9 @@
 // Hit on second call → no network, no cost.
 
 const DB_NAME = "rabbitchat-ai-cache";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
-export type CacheStoreName = "tts" | "llm" | "img";
+export type CacheStoreName = "tts" | "llm" | "img" | "character";
 
 type CacheEntry<T> = {
   key: string;
@@ -44,6 +44,9 @@ function openDb(): Promise<IDBDatabase | null> {
       }
       if (!db.objectStoreNames.contains("img")) {
         db.createObjectStore("img", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("character")) {
+        db.createObjectStore("character", { keyPath: "key" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -137,6 +140,26 @@ export async function putCachedImageUrl(key: string, url: string): Promise<void>
   });
 }
 
+// Character pose blobs sliced by the parent from the CI sheet.
+// Key = mood (e.g. "happy", "listening", ...). Value = PNG Blob.
+export async function getCharacterPose(mood: string): Promise<Blob | null> {
+  const e = await getEntry<unknown>("character", mood);
+  return e?.blob ?? null;
+}
+
+export async function putCharacterPose(mood: string, blob: Blob): Promise<void> {
+  await putEntry("character", {
+    key: mood,
+    ts: Date.now(),
+    bytes: blob.size,
+    blob,
+  });
+}
+
+export async function clearCharacterPoses(): Promise<void> {
+  return clearCache("character");
+}
+
 // --- Stats / management ---------------------------------------------------
 
 export type CacheStats = {
@@ -197,7 +220,9 @@ export async function getCacheStats(): Promise<CacheStats> {
 export async function clearCache(store?: CacheStoreName): Promise<void> {
   const db = await openDb();
   if (!db) return;
-  const stores: CacheStoreName[] = store ? [store] : ["tts", "llm", "img"];
+  const stores: CacheStoreName[] = store
+    ? [store]
+    : ["tts", "llm", "img", "character"];
   for (const s of stores) {
     await new Promise<void>((resolve) => {
       const tx = db.transaction(s, "readwrite");
