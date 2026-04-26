@@ -297,9 +297,24 @@ async function callLLM(systemPrompt: string, userMsg: string): Promise<{ content
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // Friendlier diagnostics for the most common "key is set but it failed" cases
+    let hint = body.slice(0, 240);
+    if (res.status === 401) {
+      hint = "API 키가 잘못됐거나 만료됨. .env.local 다시 확인 + dev 서버 재시작.";
+    } else if (res.status === 429) {
+      hint = body.includes("insufficient_quota") || body.includes("billing")
+        ? "잔액 부족 또는 결제 미완료. 플랫폼 콘솔에서 충전 후 재시도. (OpenAI: https://platform.openai.com/usage)"
+        : "rate limit 초과. 1~2분 대기 후 재시도.";
+    } else if (res.status === 403) {
+      hint = "권한 부족. 키 권한(scope) 확인.";
+    } else if (res.status === 404) {
+      hint = `모델(${cfg.model}) 접근 불가. 키가 해당 모델 사용 권한이 있는지 확인.`;
+    } else if (res.status >= 500) {
+      hint = `${vendor} 서버 일시 장애. 잠시 후 재시도.`;
+    }
     throw new AIGeneratorError(
       `${vendor} returned ${res.status}`,
-      body.slice(0, 200),
+      hint,
     );
   }
   const json = (await res.json()) as {

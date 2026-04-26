@@ -43,10 +43,10 @@ const config: Config = {
       // - serif:   메타·캡션 (명조)
       // - accent:  영문 라벨·인사 (필기체)
       fontFamily: {
-        display: ['Gaegu', 'sans-serif'],
-        sans: ['"Gowun Dodum"', 'sans-serif'],
-        serif: ['"Gowun Batang"', 'serif'],
-        accent: ['Caveat', 'cursive'],
+        display: ['var(--font-display)', 'Gaegu', 'sans-serif'],
+        sans: ['var(--font-sans)', '"Gowun Dodum"', 'sans-serif'],
+        serif: ['var(--font-serif)', '"Gowun Batang"', 'serif'],
+        accent: ['var(--font-accent)', 'Caveat', 'cursive'],
       },
 
       // ── 모서리 라운드 ───────────────────────────────────

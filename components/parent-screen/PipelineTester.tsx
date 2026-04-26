@@ -140,6 +140,11 @@ export function PipelineTester() {
   });
   const [editing, setEditing] = useState(false);
   const [rawText, setRawText] = useState("");
+  // Input mode — what gets sent to the LLM:
+  //   "natural"  = only childName + age + rawText (form defaults ignored)
+  //   "form"     = all 9 structured fields, rawText ignored
+  //   "both"     = everything combined (richest context)
+  const [inputMode, setInputMode] = useState<"natural" | "form" | "both">("form");
 
   const update = <K extends keyof AuthorInput>(key: K, value: AuthorInput[K]) => {
     setInput((prev) => ({ ...prev, [key]: value }));
@@ -156,9 +161,30 @@ export function PipelineTester() {
     if (!p) return;
     setInput({ ...p.input, childName: input.childName });
     setRawText("");
+    if (inputMode === "natural") setInputMode("form");
   };
   const applyRawText = () => {
     setInput((prev) => ({ ...prev, rawText: rawText.trim() || undefined }));
+  };
+
+  // Compose the actual input that gets sent to the LLM, based on mode.
+  const composeInput = (): AuthorInput => {
+    if (inputMode === "natural") {
+      return {
+        childName: input.childName,
+        childAgeMonths: input.childAgeMonths,
+        rawText: rawText.trim() || input.rawText,
+      };
+    }
+    if (inputMode === "form") {
+      const { rawText: _ignored, ...rest } = input;
+      return rest;
+    }
+    // both
+    return {
+      ...input,
+      rawText: rawText.trim() || input.rawText,
+    };
   };
 
   const [stages, setStages] = useState<Record<StageId, StageState>>(() =>
@@ -214,7 +240,7 @@ export function PipelineTester() {
     let story: Story | null = null;
     setStage("scenario", { status: "running", startedAt: Date.now() });
     try {
-      story = await generateStoryWithAI(input);
+      story = await generateStoryWithAI(composeInput());
       setScenario(story);
       setStage("scenario", { status: "done", finishedAt: Date.now() });
     } catch (e) {
@@ -383,20 +409,33 @@ export function PipelineTester() {
         </div>
       </header>
 
-      {!realMode ? (
-        <p className="rounded-2xl bg-yellow-100 p-3 text-xs text-yellow-900 shadow-soft">
-          현재 mock 모드입니다. 시나리오 생성·TTS는 실제 호출되지 않습니다.{" "}
-          <code>NEXT_PUBLIC_PROVIDER=real</code> + 키 설정 후 다시.
-        </p>
-      ) : null}
+      {/* Provider diagnostic — helps when "키는 있는데 실패한다" */}
+      <div className="rounded-2xl bg-kkang-cream/70 p-3 text-xs shadow-soft">
+        <div className="font-semibold text-kkang-ink">환경 진단</div>
+        <ul className="mt-1 space-y-0.5 text-kkang-ink/70">
+          <li>
+            NEXT_PUBLIC_PROVIDER ={" "}
+            <code className="rounded bg-white/60 px-1">{getProviderMode()}</code>{" "}
+            {realMode
+              ? "✅"
+              : "⚠️ 'real'로 설정해야 LLM/TTS 실제 호출. .env.local 확인 후 dev 재시작."}
+          </li>
+          <li>
+            <span className="text-kkang-ink/50">
+              참고: 401(잘못된 키) / 429(rate or 잔액부족) / 404(모델 권한 없음) 같은 상태는 #2
+              시나리오 단계에서 사유와 함께 표시됩니다.
+            </span>
+          </li>
+        </ul>
+      </div>
 
-      {/* Input section — preset + free text + structured edit */}
+      {/* Input section — mode toggle + preset + free text + structured edit */}
       <div className="rounded-3xl bg-white p-5 shadow-card">
         <header className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-kkang-ink">테스트 입력</h3>
             <p className="text-xs text-kkang-ink/60">
-              프리셋 한 번 누르거나 자유롭게 수정해서 바로 실행
+              아래 모드 선택 → 프리셋 또는 직접 입력 → ▶ 실행
             </p>
           </div>
           <button
@@ -407,6 +446,42 @@ export function PipelineTester() {
             {editing ? "접기" : "직접 수정"}
           </button>
         </header>
+
+        {/* 3-mode toggle — what gets sent to the LLM */}
+        <div className="mb-3">
+          <div className="text-xs text-kkang-ink/60">입력 방식</div>
+          <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+            {(
+              [
+                { id: "natural", label: "자연어만", hint: "텍스트 1줄로 요약" },
+                { id: "form", label: "입력폼만", hint: "9개 섹션 정밀" },
+                { id: "both", label: "둘 다", hint: "자연어 + 폼 합쳐 전달" },
+              ] as const
+            ).map((m) => {
+              const active = inputMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setInputMode(m.id)}
+                  className={`rounded-xl px-3 py-2 text-left ${
+                    active ? "bg-kkang-pink font-semibold shadow-soft" : "bg-kkang-cream"
+                  }`}
+                >
+                  <div className="text-kkang-ink">{m.label}</div>
+                  <div className="text-[10px] text-kkang-ink/60">{m.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[10px] text-kkang-ink/50">
+            {inputMode === "natural"
+              ? "자녀 이름 + 자연어 textarea만 LLM에 전달. 폼 값은 무시됩니다."
+              : inputMode === "form"
+                ? "9개 섹션 폼만 LLM에 전달. 자연어 textarea 값은 무시됩니다."
+                : "자연어 + 폼 둘 다 LLM에 전달 (가장 풍부한 컨텍스트)."}
+          </p>
+        </div>
 
         {/* Preset chips */}
         <div className="mb-3 flex flex-wrap gap-2">
@@ -554,7 +629,7 @@ export function PipelineTester() {
           hint={o.hint}
           state={stages[o.id]}
         >
-          {o.id === "input" ? <InputView input={input} /> : null}
+          {o.id === "input" ? <InputView input={composeInput()} mode={inputMode} /> : null}
           {o.id === "scenario" && scenario ? <ScenarioView story={scenario} /> : null}
           {o.id === "voiceList" && voiceList.length ? (
             <VoiceListView lines={voiceList} />
@@ -652,7 +727,7 @@ function StageCard({
 
 // --- Per-stage views -----------------------------------------------------
 
-function InputView({ input }: { input: AuthorInput }) {
+function InputView({ input, mode }: { input: AuthorInput; mode?: "natural" | "form" | "both" }) {
   const fmt = (label: string, v?: string | string[] | number) => {
     if (v === undefined || v === null) return null;
     if (Array.isArray(v)) {
@@ -670,20 +745,28 @@ function InputView({ input }: { input: AuthorInput }) {
     );
   };
   return (
-    <ul className="space-y-1 text-xs text-kkang-ink/80">
-      {fmt("자녀", input.childName)}
-      {fmt("월령", input.childAgeMonths)}
-      {fmt("장소", [input.placeType, input.placeDetail].filter(Boolean) as string[])}
-      {fmt("이벤트", input.eventText)}
-      {fmt("친구", input.friends)}
-      {fmt("기타", input.others)}
-      {fmt("행동", input.childActions)}
-      {fmt("좋아한 것", input.childPreferences)}
-      {fmt("실제 말", input.childQuote)}
-      {fmt("감정", input.emotions)}
-      {fmt("목표", input.goals)}
-      {fmt("반복", input.repeatMode)}
-    </ul>
+    <div className="space-y-2">
+      {mode ? (
+        <div className="text-[10px] text-kkang-ink/50">
+          모드: <strong>{mode}</strong> — LLM에 실제 전달되는 항목만 표시
+        </div>
+      ) : null}
+      <ul className="space-y-1 text-xs text-kkang-ink/80">
+        {fmt("자녀", input.childName)}
+        {fmt("월령", input.childAgeMonths)}
+        {fmt("장소", [input.placeType, input.placeDetail].filter(Boolean) as string[])}
+        {fmt("이벤트", input.eventText)}
+        {fmt("친구", input.friends)}
+        {fmt("기타", input.others)}
+        {fmt("행동", input.childActions)}
+        {fmt("좋아한 것", input.childPreferences)}
+        {fmt("실제 말", input.childQuote)}
+        {fmt("감정", input.emotions)}
+        {fmt("목표", input.goals)}
+        {fmt("반복", input.repeatMode)}
+        {fmt("자유 메모", input.rawText)}
+      </ul>
+    </div>
   );
 }
 
