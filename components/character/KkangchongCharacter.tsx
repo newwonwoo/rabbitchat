@@ -15,13 +15,12 @@ type Props = {
   onPress: () => void;
 };
 
-// 3-tier visual fallback (no more sprite coordinate guessing):
-//   1. Per-mood PNG file at /assets/character/kkang_<mood>.png
-//      → parent slices from the CI sheet via parent settings or
-//        any image editor and drops the 6 files into public/assets/character/
-//   2. IndexedDB blob written by the in-app slice tool (same effect,
-//      but no GitHub upload needed)
-//   3. CSS-drawn bunny silhouette (always available, never breaks)
+// Resolution chain — no exact filename required:
+//   1. /api/character-pose?mood=<m>  → fuzzy-matches whatever PNG the
+//      parent uploaded (kkang_happy.png, 행복.png, kkangchong_smile_v2.png ...)
+//   2. IndexedDB blob written by the in-app slice tool
+//   3. Hard-coded /assets/character/kkang_<mood>.png (legacy strict path)
+//   4. CSS-drawn bunny silhouette (always works)
 
 const SIZE_PX: Record<KkangchongSize, number> = {
   sm: 240,
@@ -39,8 +38,27 @@ const BODY_ANIM: Record<CharacterMood, string> = {
   listening: "animate-body-wobble",
 };
 
-function moodFileUrl(mood: CharacterMood): string {
-  return `/assets/character/kkang_${mood}.png`;
+// In-process per-mood URL cache so we don't re-hit the API every render.
+const apiUrlCache = new Map<CharacterMood, string | null>();
+
+async function fetchPoseUrl(mood: CharacterMood): Promise<string | null> {
+  if (apiUrlCache.has(mood)) return apiUrlCache.get(mood)!;
+  try {
+    const res = await fetch(
+      `/api/character-pose?mood=${encodeURIComponent(mood)}`,
+    );
+    if (!res.ok) {
+      apiUrlCache.set(mood, null);
+      return null;
+    }
+    const json = (await res.json()) as { ok: boolean; url: string | null };
+    const url = json.url ?? null;
+    apiUrlCache.set(mood, url);
+    return url;
+  } catch {
+    apiUrlCache.set(mood, null);
+    return null;
+  }
 }
 
 export function KkangchongCharacter({
@@ -50,25 +68,51 @@ export function KkangchongCharacter({
   size = "lg",
   onPress,
 }: Props) {
-  const [tier, setTier] = useState<"file" | "indexeddb" | "css">("file");
+  type Tier = "api" | "indexeddb" | "strict" | "css";
+  const [tier, setTier] = useState<Tier>("api");
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   const effectiveMood: CharacterMood = isPlaying
     ? "happy"
     : (mood ?? character.defaultMood);
 
-  // Try IndexedDB blob when the file URL fails (404)
+  // Reset tier when mood changes — try the chain again per pose
+  useEffect(() => {
+    setTier("api");
+    setApiUrl(null);
+    setBlobUrl(null);
+  }, [effectiveMood]);
+
+  // Tier 1: API lookup
+  useEffect(() => {
+    if (tier !== "api") return;
+    let cancelled = false;
+    fetchPoseUrl(effectiveMood).then((url) => {
+      if (cancelled) return;
+      if (url) {
+        setApiUrl(url);
+      } else {
+        setTier("indexeddb");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tier, effectiveMood]);
+
+  // Tier 2: IndexedDB blob
   useEffect(() => {
     let revoke: string | null = null;
+    if (tier !== "indexeddb") return;
     (async () => {
-      if (tier !== "indexeddb") return;
       const blob = await getCharacterPose(effectiveMood);
       if (blob) {
         const url = URL.createObjectURL(blob);
         revoke = url;
         setBlobUrl(url);
       } else {
-        setTier("css");
+        setTier("strict");
       }
     })();
     return () => {
@@ -76,14 +120,7 @@ export function KkangchongCharacter({
     };
   }, [tier, effectiveMood]);
 
-  // Reset tier when the mood changes so each pose gets a fresh chance.
-  useEffect(() => {
-    setTier("file");
-    setBlobUrl(null);
-  }, [effectiveMood]);
-
   const targetH = SIZE_PX[size];
-
   const animClass = BODY_ANIM[effectiveMood];
 
   return (
@@ -98,10 +135,10 @@ export function KkangchongCharacter({
         transformOrigin: "50% 90%",
       }}
     >
-      {tier === "file" ? (
+      {tier === "api" && apiUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={moodFileUrl(effectiveMood)}
+          src={apiUrl}
           alt=""
           aria-hidden
           className="h-full w-full object-contain"
@@ -111,6 +148,15 @@ export function KkangchongCharacter({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={blobUrl}
+          alt=""
+          aria-hidden
+          className="h-full w-full object-contain"
+          onError={() => setTier("strict")}
+        />
+      ) : tier === "strict" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/assets/character/kkang_${effectiveMood}.png`}
           alt=""
           aria-hidden
           className="h-full w-full object-contain"
@@ -142,7 +188,11 @@ function FallbackBunny({
   const eyeShape = mood === "sleepy" ? "h-[6px]" : "h-6";
   const mouthOpen = mood === "happy" || mood === "jumping";
   return (
-    <span className="relative inline-block" aria-hidden style={{ transform: "scale(2)", transformOrigin: "50% 90%" }}>
+    <span
+      className="relative inline-block"
+      aria-hidden
+      style={{ transform: "scale(2)", transformOrigin: "50% 90%" }}
+    >
       <span
         className="absolute -top-12 left-3 h-16 w-5 rounded-full shadow-soft"
         style={{
@@ -163,8 +213,12 @@ function FallbackBunny({
       >
         <span className="absolute inset-x-0 top-7 flex justify-center">
           <span className="flex w-20 items-center justify-between">
-            <span className={`block w-6 ${eyeShape} rounded-full bg-kkang-ink transition-all`} />
-            <span className={`block w-6 ${eyeShape} rounded-full bg-kkang-ink transition-all`} />
+            <span
+              className={`block w-6 ${eyeShape} rounded-full bg-kkang-ink transition-all`}
+            />
+            <span
+              className={`block w-6 ${eyeShape} rounded-full bg-kkang-ink transition-all`}
+            />
           </span>
         </span>
         <span className="absolute left-1/2 top-[58%] -translate-x-1/2 block h-3 w-5 rounded-full bg-kkang-ink" />
