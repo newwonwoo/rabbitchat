@@ -24,4 +24,22 @@ export const themes: Theme[] = [
     emoji: "🌳",
     storyId: "story_park_walk",
   },
+  {
+    id: "theme_bedtime",
+    name: "잘 자기 전",
+    emoji: "🌙",
+    storyId: "story_bedtime",
+  },
+  {
+    id: "theme_morning",
+    name: "아침 인사",
+    emoji: "☀️",
+    storyId: "story_morning",
+  },
+  {
+    id: "theme_book",
+    name: "책 읽기",
+    emoji: "📚",
+    storyId: "story_book_reading",
+  },
 ];

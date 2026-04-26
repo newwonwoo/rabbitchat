@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChildStoryScreen } from "@/components/child-screen/ChildStoryScreen";
+import { HomeScreen } from "@/components/HomeScreen";
 import { CharacterManager } from "@/components/parent-screen/CharacterManager";
 import { ParentHome } from "@/components/parent-screen/ParentHome";
 import { ParentLogViewer } from "@/components/parent-screen/ParentLogViewer";
@@ -11,8 +12,11 @@ import { PlaceManager } from "@/components/parent-screen/PlaceManager";
 import { SettingsPanel } from "@/components/parent-screen/SettingsPanel";
 import { StoryBuilder } from "@/components/parent-screen/StoryBuilder";
 import { ThemeSelector } from "@/components/parent-screen/ThemeSelector";
+import { SplashScreen } from "@/components/SplashScreen";
 import { characters } from "@/data/characters";
+import { stories } from "@/data/stories";
 import { themes } from "@/data/themes";
+import { loadProfile } from "@/lib/profile";
 import { playMockVoice } from "@/lib/audioEngine";
 import {
   pickSceneBackground,
@@ -41,7 +45,8 @@ import type { Turn } from "@/types/turn";
 import type { UIMode } from "@/types/ui";
 
 export default function HomePage() {
-  const [uiMode, setUiMode] = useState<UIMode>("child");
+  const [uiMode, setUiMode] = useState<UIMode>("splash");
+  const [childName, setChildName] = useState("원우");
   const [characterIdx, setCharacterIdx] = useState(0);
   const [themeIdx, setThemeIdx] = useState(0);
   const [sceneId, setSceneId] = useState<string>(() => {
@@ -89,6 +94,8 @@ export default function HomePage() {
   useEffect(() => {
     const persisted = loadTurns();
     if (persisted.length > 0) setTurns(persisted);
+    const profile = loadProfile();
+    if (profile.name) setChildName(profile.name);
     const pref = loadPreference();
     if (pref.preferredCharacterId) {
       const idx = characters.findIndex((c) => c.id === pref.preferredCharacterId);
@@ -162,7 +169,7 @@ export default function HomePage() {
   }, [scene.id, log]);
 
   const handleReturnToChild = useCallback(() => {
-    setUiMode("child");
+    setUiMode("home");
   }, []);
 
   const handleRestart = useCallback(() => {
@@ -242,6 +249,31 @@ export default function HomePage() {
     const s = getStoryByTheme(themes[0].id);
     if (s) setSceneId(s.startSceneId);
   }, []);
+
+  if (uiMode === "splash") {
+    return <SplashScreen onDone={() => setUiMode("home")} />;
+  }
+
+  if (uiMode === "home") {
+    const todayStory = stories[0];
+    const libraryStories = stories.slice(1);
+    return (
+      <HomeScreen
+        childName={childName}
+        todayStory={todayStory}
+        libraryStories={libraryStories}
+        onPickStory={(s) => {
+          const idx = themes.findIndex((t) => t.id === s.themeId);
+          if (idx >= 0) {
+            setThemeIdx(idx);
+            setSceneId(s.startSceneId);
+          }
+          setUiMode("child");
+        }}
+        onParentEnter={handleParentEnter}
+      />
+    );
+  }
 
   if (uiMode === "child") {
     const backgroundAsset = pickSceneBackground(

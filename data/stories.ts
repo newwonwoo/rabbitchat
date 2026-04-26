@@ -4,6 +4,11 @@ const martBananaStory: Story = {
   id: "story_mart_banana",
   themeId: "theme_mart",
   title: "마트에서 바나나 고르기",
+  subtitle: "오늘 마트에서 카트 밀고 과일 골랐어",
+  coverEmoji: "🛒",
+  coverImageQuery: "korean grocery store fruit aisle",
+  tags: ["모험", "회상"],
+  estimatedMinutes: 3,
   startSceneId: "s1",
   scenes: [
     {
@@ -54,6 +59,11 @@ const parkWalk: Story = {
   id: "story_park_walk",
   themeId: "theme_park",
   title: "공원에서 산책하기",
+  subtitle: "공원에서 나비랑 꽃이랑 만났어",
+  coverEmoji: "🌳",
+  coverImageQuery: "soft park path trees flowers",
+  tags: ["모험", "놀이"],
+  estimatedMinutes: 3,
   startSceneId: "p1",
   scenes: [
     {
@@ -112,6 +122,11 @@ const todayKinder: Story = {
   id: "story_today_kinder",
   themeId: "theme_today",
   title: "오늘 어린이집",
+  subtitle: "어린이집에서 무슨 놀이 했어?",
+  coverEmoji: "🏫",
+  coverImageQuery: "korean kindergarten classroom kids",
+  tags: ["일상", "회상"],
+  estimatedMinutes: 4,
   startSceneId: "k1",
   scenes: [
     {
@@ -245,4 +260,146 @@ const todayKinder: Story = {
   ],
 };
 
-export const stories: Story[] = [todayKinder, martBananaStory, parkWalk];
+// Bedtime routine — short, calm, uses parent voice if uploaded.
+const bedtime: Story = {
+  id: "story_bedtime",
+  themeId: "theme_bedtime",
+  title: "잘 자기 전",
+  subtitle: "이불 덮고 인사하고 잠들기",
+  coverEmoji: "🌙",
+  coverImageQuery: "cozy kids bedroom night soft",
+  tags: ["일상", "잠자기"],
+  estimatedMinutes: 3,
+  startSceneId: "b1",
+  scenes: [
+    {
+      id: "b1",
+      placeId: "bedroom",
+      visual: "🌙✨",
+      audioFile: "/assets/voice/bedtime_intro.mp3",
+      parentSummary: "잘 시간이라고 알리고 이불 안내.",
+      choices: [
+        { id: "go_bed", emoji: "🛏️", nextSceneId: "b2", parentLabel: "이불 덮기" },
+      ],
+    },
+    {
+      id: "b2",
+      placeId: "bedroom",
+      visual: "🐰💗",
+      audioFile: "/assets/voice/bedtime_kkang.mp3",
+      parentSummary: "깡총이가 옆에 누워서 같이 자기.",
+      choices: [
+        { id: "hug", emoji: "🤗", nextSceneId: "b3", parentLabel: "안아주기" },
+        { id: "kiss", emoji: "💋", nextSceneId: "b3", parentLabel: "뽀뽀해주기" },
+      ],
+    },
+    {
+      id: "b3",
+      placeId: "bedroom",
+      visual: "😴💫",
+      audioFile: "/assets/voice/bedtime_close.mp3",
+      parentSummary: "잘 자라고 인사하며 마무리.",
+      choices: [],
+    },
+  ],
+};
+
+// Morning routine — wake up, hello, get ready.
+const morning: Story = {
+  id: "story_morning",
+  themeId: "theme_morning",
+  title: "아침에 일어나서",
+  subtitle: "잘 잤어? 오늘도 좋은 하루 보내자",
+  coverEmoji: "☀️",
+  coverImageQuery: "soft morning sunrise kids bedroom",
+  tags: ["일상"],
+  estimatedMinutes: 3,
+  startSceneId: "m1",
+  scenes: [
+    {
+      id: "m1",
+      placeId: "bedroom",
+      visual: "☀️🐰",
+      audioFile: "/assets/voice/morning_hi.mp3",
+      parentSummary: "잘 잤는지 묻기.",
+      choices: [
+        { id: "wake_well", emoji: "😊", nextSceneId: "m2", parentLabel: "잘 잤어" },
+        { id: "wake_tired", emoji: "🥱", nextSceneId: "m2", parentLabel: "조금 졸려" },
+      ],
+    },
+    {
+      id: "m2",
+      placeId: "kitchen",
+      visual: "🥣🥛",
+      audioFile: "/assets/voice/morning_food.mp3",
+      parentSummary: "아침으로 무엇을 먹을지.",
+      choices: [
+        { id: "cereal", emoji: "🥣", nextSceneId: "m3", parentLabel: "시리얼" },
+        { id: "rice", emoji: "🍚", nextSceneId: "m3", parentLabel: "밥" },
+      ],
+    },
+    {
+      id: "m3",
+      placeId: "home",
+      visual: "🚪✨",
+      audioFile: "/assets/voice/morning_close.mp3",
+      parentSummary: "오늘도 좋은 하루 보내자.",
+      choices: [],
+    },
+  ],
+};
+
+// Book reading — pretend to read a book together with 깡총이.
+const bookReading: Story = {
+  id: "story_book_reading",
+  themeId: "theme_book",
+  title: "책 읽어줄게",
+  subtitle: "깡총이랑 그림책 한 권",
+  coverEmoji: "📚",
+  coverImageQuery: "kids picture book reading cozy",
+  tags: ["놀이"],
+  estimatedMinutes: 5,
+  startSceneId: "r1",
+  scenes: [
+    {
+      id: "r1",
+      placeId: "reading_corner",
+      visual: "📚🐰",
+      audioFile: "/assets/voice/book_intro.mp3",
+      parentSummary: "오늘은 어떤 책 읽을지 묻기.",
+      choices: [
+        { id: "book_animal", emoji: "🦁", nextSceneId: "r2", parentLabel: "동물 책" },
+        { id: "book_car", emoji: "🚗", nextSceneId: "r2", parentLabel: "자동차 책" },
+        { id: "book_food", emoji: "🍎", nextSceneId: "r2", parentLabel: "음식 책" },
+      ],
+    },
+    {
+      id: "r2",
+      placeId: "reading_corner",
+      visual: "👀💡",
+      audioFile: "/assets/voice/book_question.mp3",
+      parentSummary: "책 안의 무엇이 가장 좋았는지.",
+      choices: [
+        { id: "fav_color", emoji: "🌈", nextSceneId: "r3", parentLabel: "색깔" },
+        { id: "fav_picture", emoji: "🖼️", nextSceneId: "r3", parentLabel: "그림" },
+      ],
+    },
+    {
+      id: "r3",
+      placeId: "reading_corner",
+      visual: "📚✨",
+      audioFile: "/assets/voice/book_close.mp3",
+      parentSummary: "재밌게 읽었구나 마무리.",
+      choices: [],
+    },
+  ],
+};
+
+export const stories: Story[] = [
+  todayKinder,
+  bedtime,
+  morning,
+  bookReading,
+  martBananaStory,
+  parkWalk,
+];

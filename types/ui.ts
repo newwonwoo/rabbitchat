@@ -1,4 +1,6 @@
 export type UIMode =
+  | "splash"
+  | "home"
   | "child"
   | "parent_home"
   | "parent_menu"
