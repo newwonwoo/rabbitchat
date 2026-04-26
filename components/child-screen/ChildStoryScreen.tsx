@@ -59,6 +59,23 @@ export function ChildStoryScreen({
     return () => clearTimeout(t);
   }, [scene.id]);
 
+  // Pre-recorded scene voice (parent's own mp3) — handoff §1.2.
+  // Plays directly via HTML5 Audio, skips TTS entirely. If the file
+  // is missing or autoplay is blocked we just stay silent.
+  useEffect(() => {
+    if (!scene.audioFile) return;
+    if (typeof window === "undefined") return;
+    const audio = new Audio(scene.audioFile);
+    audio.volume = 1.0;
+    void audio.play().catch(() => {
+      // file missing / autoplay blocked — silent
+    });
+    return () => {
+      audio.pause();
+      audio.currentTime = 0;
+    };
+  }, [scene.audioFile]);
+
   useEffect(() => {
     if (isAudioPlaying || transitionMood) return;
     const t = setTimeout(() => setTransitionMood("sleepy"), SLEEPY_AFTER_MS);

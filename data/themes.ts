@@ -7,6 +7,12 @@ export type Theme = {
 
 export const themes: Theme[] = [
   {
+    id: "theme_today",
+    name: "오늘 하루",
+    emoji: "🌟",
+    storyId: "story_today_kinder",
+  },
+  {
     id: "theme_mart",
     name: "마트 모험",
     emoji: "🛒",
