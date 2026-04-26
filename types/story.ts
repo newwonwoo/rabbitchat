@@ -14,6 +14,11 @@ export type Scene = {
   // Bypasses TTS when present — used for the parent's recorded voice
   // (handoff §1.2 "엄마 유사 목소리"). Path is relative to /public.
   audioFile?: string;
+  // Fallback: when audioFile is missing or 404s, this short Korean line
+  // is sent to the TTS provider (ElevenLabs voice clone in real mode)
+  // and played in the parent's cloned voice. Cached forever per text
+  // (lib/aiCache.ts → "tts" store).
+  spokenLine?: string;
   choices: Choice[];
 };
 

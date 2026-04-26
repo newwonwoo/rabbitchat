@@ -134,6 +134,7 @@ const todayKinder: Story = {
       placeId: "kinder_intro",
       visual: "🐰💗",
       audioFile: "/assets/voice/hi.mp3",
+      spokenLine: "안녕 원우야!",
       parentSummary: "인사 — '안녕 원우야'",
       choices: [
         {
@@ -149,6 +150,7 @@ const todayKinder: Story = {
       placeId: "kinder",
       visual: "🏫",
       audioFile: "/assets/voice/kinder.mp3",
+      spokenLine: "어린이집 잘 다녀왔어? 오늘은 무슨 놀이 하고 놀았어?",
       parentSummary: "어린이집에서 무슨 놀이 했는지 묻기.",
       choices: [
         {
