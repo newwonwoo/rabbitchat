@@ -1,0 +1,115 @@
+/**
+ * styles/globals.css
+ * ----------------------------------------------------------
+ * - Tailwind 진입점
+ * - CSS 변수로 토큰 노출 (런타임 테마 변경 대비)
+ * - 종이 질감 글로벌 배경
+ * - prefers-reduced-motion 시 모든 모션 무력화
+ * - Google Fonts 로드 (Next.js 14에서는 layout.tsx의 next/font 사용 권장,
+ *   여기는 fallback)
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Google Fonts — layout.tsx에서 next/font로 로드하면 이 줄은 제거 가능 */
+@import url('https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Gowun+Dodum&family=Gowun+Batang:wght@400;700&family=Caveat:wght@400;700&display=swap');
+
+@layer base {
+  /* ── CSS 변수: 동일 토큰을 CSS에서도 사용 가능하게 ───────── */
+  :root {
+    --kkang-ivory: #F6F1E8;
+    --kkang-cream: #EDE8DC;
+    --kkang-beige: #E4DCCF;
+    --kkang-pink: #F7D7DA;
+    --kkang-pink-deep: #E8A5AB;
+    --kkang-sand: #DCCFBE;
+    --kkang-deep-sand: #C9BCA6;
+    --kkang-ink: #2B2B2B;
+    --kkang-ink-soft: #5A5246;
+
+    /* 자주 쓰는 그림자 — Tailwind와 동일 값 */
+    --kkang-shadow-soft: 0 6px 16px rgba(60, 45, 30, 0.06);
+    --kkang-shadow-card: 0 8px 24px rgba(60, 45, 30, 0.10);
+  }
+
+  /* ── 글로벌 body — 종이 질감 베이지 배경 ─────────────────── */
+  body {
+    background-color: var(--kkang-ivory);
+    /* 단색 금지 → radial gradient로 종이의 결 */
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(220, 207, 190, 0.25) 0%, transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(247, 215, 218, 0.18) 0%, transparent 45%);
+    color: var(--kkang-ink);
+    font-family: 'Gowun Dodum', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ── 접근성: 모션 감소 선호 시 모든 애니메이션 무력화 ────── */
+  /* (DESIGN.md 모션 규칙 — prefers-reduced-motion 존중) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ── 포커스 링 — 키보드 접근성 ──────────────────────── */
+  /* 부모 화면에서 키보드 사용 시 명확한 포커스 표시 */
+  :focus-visible {
+    outline: 3px solid var(--kkang-pink-deep);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+}
+
+@layer components {
+  /* ── 디바이스/카드 컨테이너 헬퍼 ─────────────────────── */
+  .kkang-card {
+    @apply bg-white rounded-kkang-lg border border-kkang-beige shadow-kkang-soft;
+  }
+
+  /* 아이 화면 선택지 banner — 144px 이상 터치 타깃 보장 */
+  .kkang-option-banner {
+    @apply kkang-card flex items-center gap-4 p-4;
+    min-height: 144px;
+  }
+
+  /* featured banner — 추천 항목용 핑크 보더 + 그라데이션 */
+  .kkang-option-banner-featured {
+    @apply kkang-option-banner;
+    border-color: var(--kkang-pink-deep);
+    border-width: 2px;
+    background: linear-gradient(135deg, white 60%, rgba(247, 215, 218, 0.4));
+  }
+
+  /* play 버튼 — 모든 인터랙션의 일관된 시그니처 */
+  .kkang-play {
+    @apply rounded-full flex items-center justify-center flex-shrink-0;
+    width: 64px;
+    height: 64px;
+    background: var(--kkang-pink-deep);
+    box-shadow: 0 4px 12px rgba(232, 165, 171, 0.4);
+  }
+  .kkang-play-lg {
+    @apply kkang-play;
+    width: 72px;
+    height: 72px;
+  }
+}
+
+@layer utilities {
+  /* 종이 질감 배경을 어떤 컨테이너에든 적용할 수 있는 utility */
+  .bg-kkang-paper {
+    background-color: var(--kkang-ivory);
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(220, 207, 190, 0.25) 0%, transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(247, 215, 218, 0.18) 0%, transparent 45%);
+  }
+}
