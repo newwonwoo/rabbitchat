@@ -30,4 +30,7 @@ export const mockTTSProvider: TTSProvider = {
   speak: async (_text: string): Promise<void> => {
     await new Promise((r) => setTimeout(r, 200));
   },
+  prefetch: async (_text: string): Promise<void> => {
+    // Nothing to warm — mock has no cost.
+  },
 };

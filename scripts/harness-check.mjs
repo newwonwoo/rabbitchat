@@ -34,6 +34,9 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   // index.ts re-exports identifiers like elevenLabsTTSProvider — these
   // are TS names, not API URLs. Real provider mode is gated by env.
   path.join("lib", "providers", "index.ts"),
+  // Settings UI references ElevenLabs by name in user-facing copy
+  // (e.g. error messages directing the parent to set the API key).
+  path.join("components", "parent-screen", "CacheStats.tsx"),
 ]);
 
 const FORBIDDEN_APIS = [

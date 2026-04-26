@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { warmTTSPhrases } from "@/lib/cacheWarmer";
 import { resolveAssetsForStory } from "@/lib/imageAssetResolver";
 import {
   generateStoryFromEvent,
@@ -12,6 +13,19 @@ import {
   loadCustomStories,
 } from "@/lib/storage/customStoryStore";
 import type { Story } from "@/types/story";
+
+// Pull every TTS-worthy line out of a generated story so we can warm the
+// cache on save. parentLabel/parentSummary are NOT spoken to the child
+// (handoff §3.1) so we exclude them — only assistant/question lines.
+function extractWarmableLines(out: StoryAutoGenerateOutput): string[] {
+  const lines = new Set<string>();
+  if (out.assistantLine) lines.add(out.assistantLine);
+  if (out.questionLine) lines.add(out.questionLine);
+  for (const b of out.branches) {
+    if (b.questionLine) lines.add(b.questionLine);
+  }
+  return Array.from(lines);
+}
 
 // v2: parent supplies placeName + eventText only; the rule-based auto
 // generator builds a Story (≥3 scenes, ≥5 internal branches) and the
@@ -49,10 +63,21 @@ export function StoryBuilder() {
     setFeedback(`분기 ${out.branchCount}개 생성됨.`);
   };
 
-  const handleSavePreview = () => {
+  const handleSavePreview = async () => {
     if (!preview) return;
     setSaved(appendCustomStory(preview.story));
-    setFeedback("저장되었습니다.");
+    setFeedback("저장됨. 캐시 워밍 중…");
+    const lines = extractWarmableLines(preview);
+    const report = await warmTTSPhrases(lines);
+    if (report.skippedReason === "mock_mode") {
+      setFeedback("저장됨. (Mock 모드라 TTS 캐시는 건너뜀)");
+    } else if (report.skippedReason === "provider_unsupported") {
+      setFeedback("저장됨. (TTS 워밍 미지원)");
+    } else {
+      setFeedback(
+        `저장됨. 새로 캐시 ${report.newWarm}개, 적중 ${report.hit}개 (${report.charsBilled}자 사용).`,
+      );
+    }
     setPreview(null);
   };
 

@@ -130,44 +130,50 @@ async function playBlob(blob: Blob): Promise<void> {
   a.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
 }
 
+// Shared fetch+cache for TTS. Used by both speak() (which then plays)
+// and prefetch() (which only warms cache).
+async function fetchOrCachedTTSBlob(text: string): Promise<Blob> {
+  const voiceId = requireEnv(NEED_VOICE);
+  const cacheKey = await hashKey(["tts", "elevenlabs", voiceId, text]);
+  const hit = await getCachedBlob(cacheKey);
+  if (hit) {
+    bumpHit("tts");
+    return hit;
+  }
+  bumpMiss("tts");
+
+  const key = requireEnv(NEED_ELEVEN);
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": key,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.5, similarity_boost: 0.85 },
+      }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`[tts] ElevenLabs returned ${res.status}`);
+  }
+  const blob = await res.blob();
+  await putCachedBlob(cacheKey, blob);
+  return blob;
+}
+
 export const elevenLabsTTSProvider: TTSProvider = {
   name: "elevenlabs-clone",
   speak: async (text: string): Promise<void> => {
-    const voiceId = requireEnv(NEED_VOICE);
-
-    // Cache lookup — same (voiceId, text) → identical mp3 audio.
-    // This is the biggest cost-saver: repeated lines never hit the API.
-    const cacheKey = await hashKey(["tts", "elevenlabs", voiceId, text]);
-    const hit = await getCachedBlob(cacheKey);
-    if (hit) {
-      bumpHit("tts");
-      await playBlob(hit);
-      return;
-    }
-    bumpMiss("tts");
-
-    const key = requireEnv(NEED_ELEVEN);
-    const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": key,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: { stability: 0.5, similarity_boost: 0.85 },
-        }),
-      },
-    );
-    if (!res.ok) {
-      throw new Error(`[tts] ElevenLabs returned ${res.status}`);
-    }
-    const blob = await res.blob();
-    await putCachedBlob(cacheKey, blob);
+    const blob = await fetchOrCachedTTSBlob(text);
     await playBlob(blob);
+  },
+  prefetch: async (text: string): Promise<void> => {
+    await fetchOrCachedTTSBlob(text);
   },
 };
