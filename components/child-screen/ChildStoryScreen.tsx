@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { ChoiceImageButton } from "@/components/child-screen/ChoiceImageButton";
 import { ParentGate } from "@/components/child-screen/ParentGate";
 import { KkangchongCharacter } from "@/components/character/KkangchongCharacter";
-import { FOOD_SHEET, type CISpriteFrame } from "@/lib/ciSheet";
 import { useSearchedImage } from "@/lib/imageSearcher";
 import { getTTSProvider } from "@/lib/providers";
 import { isUserGestureUnlocked, unlockAudio } from "@/lib/soundEngine";
@@ -28,16 +27,6 @@ type Props = {
 const SLEEPY_AFTER_MS = 30_000;
 
 const FOOD_GLYPHS = new Set(["🍌", "🍎", "🍓", "🥖", "🍐"]);
-
-// Map an emoji choice to a 4-frame food sequence in the CI food sheet:
-//   phase 1 (hold) → phase 2 (bite) → phase 3 (chew/expr) → phase 4 (happy/expr)
-const FOOD_SEQUENCE: Record<string, [string, string, string, string]> = {
-  "🍎": ["apple_hold", "apple_bite", "expr_chew", "expr_happy"],
-  "🍌": ["banana_hold", "banana_bite", "expr_chew", "expr_happy"],
-  "🍓": ["strawberry_hold", "strawberry_bite", "expr_chew", "expr_happy"],
-  "🍐": ["pear_eat", "pear_eat", "expr_chew", "expr_happy"],
-  "🥖": ["meal_bite", "meal_chew", "meal_swallow", "meal_done"],
-};
 
 export function ChildStoryScreen({
   character,
@@ -278,6 +267,11 @@ export function ChildStoryScreen({
 // Crops one frame from public/assets/ci/food-sheet.png. Falls back to the
 // emoji animation if the sheet is missing.
 
+// Food sequence renderer. Coordinate-based sheet cropping was unreliable
+// (kept dragging in adjacent text from the source image), so the sequence
+// is now a clean emoji animation. When per-action food PNGs are uploaded
+// (kkang_apple_bite.png etc.) we'll route through the same fuzzy lookup
+// API used for character poses.
 function FoodSpriteFrame({
   glyph,
   phase,
@@ -285,65 +279,24 @@ function FoodSpriteFrame({
   glyph: string;
   phase: 0 | 1 | 2 | 3;
 }) {
-  const [sheetOk, setSheetOk] = useState(true);
-  const seq = FOOD_SEQUENCE[glyph];
-  const frameKey =
-    seq && phase >= 1
-      ? (seq[(phase - 1) as 0 | 1 | 2 | 3] as keyof typeof FOOD_SHEET.frames)
-      : null;
-  const frame = (frameKey ? FOOD_SHEET.frames[frameKey] : null) as
-    | CISpriteFrame
-    | null;
-
-  if (!sheetOk || !frame) {
-    // legacy emoji animation
-    return (
-      <span aria-hidden className="relative inline-flex">
-        <span
-          className={`text-7xl transition-transform duration-300 ${
-            phase === 1
-              ? "scale-110"
-              : phase === 2
-                ? "scale-95 animate-body-wobble"
-                : "scale-50 opacity-50"
-          }`}
-        >
-          {glyph}
-        </span>
-        {phase === 3 ? (
-          <span className="absolute -right-10 top-2 text-4xl">✨</span>
-        ) : null}
-        <img
-          src={FOOD_SHEET.src}
-          alt=""
-          aria-hidden
-          className="hidden"
-          onError={() => setSheetOk(false)}
-        />
-      </span>
-    );
-  }
-
-  const targetH = 220;
-  const scale = targetH / frame.h;
-  const renderedW = frame.w * scale;
-  const sheetW = FOOD_SHEET.intrinsicW * scale;
-  const sheetH = FOOD_SHEET.intrinsicH * scale;
-  const bgX = -frame.x * scale;
-  const bgY = -frame.y * scale;
-
   return (
-    <span
-      aria-hidden
-      className="block animate-soft-land"
-      style={{
-        width: renderedW,
-        height: targetH,
-        backgroundImage: `url(${FOOD_SHEET.src})`,
-        backgroundRepeat: "no-repeat",
-        backgroundSize: `${sheetW}px ${sheetH}px`,
-        backgroundPosition: `${bgX}px ${bgY}px`,
-      }}
-    />
+    <span aria-hidden className="relative inline-flex">
+      <span
+        className={`text-9xl transition-transform duration-300 ${
+          phase === 1
+            ? "scale-110"
+            : phase === 2
+              ? "scale-95 animate-body-wobble"
+              : phase === 3
+                ? "scale-110"
+                : "scale-100"
+        }`}
+      >
+        {glyph}
+      </span>
+      {phase === 3 ? (
+        <span className="absolute -right-12 top-2 text-5xl">✨</span>
+      ) : null}
+    </span>
   );
 }

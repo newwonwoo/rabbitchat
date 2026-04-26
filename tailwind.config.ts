@@ -30,6 +30,8 @@ const config: Config = {
       boxShadow: {
         soft: "0 8px 24px rgba(43, 43, 43, 0.08)",
         pop: "0 2px 0 rgba(43, 43, 43, 0.10), 0 12px 28px rgba(43, 43, 43, 0.12)",
+        hero: "0 4px 0 rgba(43, 43, 43, 0.06), 0 24px 60px rgba(247, 215, 218, 0.55), 0 12px 32px rgba(43, 43, 43, 0.14)",
+        card: "0 2px 0 rgba(43, 43, 43, 0.05), 0 10px 30px rgba(43, 43, 43, 0.10)",
       },
       keyframes: {
         "ear-bounce": {
