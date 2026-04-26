@@ -90,11 +90,76 @@ const DEFAULT_INPUT: AuthorInput = {
   repeatMode: "variation",
 };
 
+// Quick presets — one-click scenario swap.
+const PRESETS: { id: string; label: string; input: AuthorInput }[] = [
+  {
+    id: "kinder",
+    label: "어린이집 / 시현이 / 블록",
+    input: { ...DEFAULT_INPUT },
+  },
+  {
+    id: "mart",
+    label: "마트 / 바나나",
+    input: {
+      ...DEFAULT_INPUT,
+      placeType: "마트",
+      placeDetail: "과일 코너",
+      eventText: "엄마랑 카트 밀고 바나나를 골랐어",
+      friends: [],
+      others: ["엄마"],
+      childActions: ["카트를 밀었어", "바나나를 골랐어"],
+      childPreferences: ["바나나", "카트"],
+      childQuote: "바나나!",
+      emotions: ["신남"],
+      goals: ["어휘", "순서"],
+    },
+  },
+  {
+    id: "park",
+    label: "공원 / 나비 / 꽃",
+    input: {
+      ...DEFAULT_INPUT,
+      placeType: "공원",
+      placeDetail: "꽃밭",
+      eventText: "나비를 따라가다가 꽃을 봤어",
+      friends: [],
+      others: ["엄마", "아빠"],
+      childActions: ["나비를 따라갔어", "꽃 냄새를 맡았어"],
+      childPreferences: ["나비", "꽃"],
+      childQuote: "나비 예뻐",
+      emotions: ["호기심", "신남"],
+      goals: ["회상", "감정"],
+    },
+  },
+];
+
 export function PipelineTester() {
-  const [input] = useState<AuthorInput>({
+  const [input, setInput] = useState<AuthorInput>({
     ...DEFAULT_INPUT,
     childName: loadProfile().name || DEFAULT_INPUT.childName,
   });
+  const [editing, setEditing] = useState(false);
+  const [rawText, setRawText] = useState("");
+
+  const update = <K extends keyof AuthorInput>(key: K, value: AuthorInput[K]) => {
+    setInput((prev) => ({ ...prev, [key]: value }));
+  };
+  const updateList = (key: keyof AuthorInput, csv: string) => {
+    const arr = csv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setInput((prev) => ({ ...prev, [key]: arr } as AuthorInput));
+  };
+  const applyPreset = (id: string) => {
+    const p = PRESETS.find((x) => x.id === id);
+    if (!p) return;
+    setInput({ ...p.input, childName: input.childName });
+    setRawText("");
+  };
+  const applyRawText = () => {
+    setInput((prev) => ({ ...prev, rawText: rawText.trim() || undefined }));
+  };
 
   const [stages, setStages] = useState<Record<StageId, StageState>>(() =>
     Object.fromEntries(
@@ -325,6 +390,161 @@ export function PipelineTester() {
         </p>
       ) : null}
 
+      {/* Input section — preset + free text + structured edit */}
+      <div className="rounded-3xl bg-white p-5 shadow-card">
+        <header className="mb-3 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-kkang-ink">테스트 입력</h3>
+            <p className="text-xs text-kkang-ink/60">
+              프리셋 한 번 누르거나 자유롭게 수정해서 바로 실행
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            className="rounded-lg bg-kkang-cream px-3 py-1 text-xs shadow-soft"
+          >
+            {editing ? "접기" : "직접 수정"}
+          </button>
+        </header>
+
+        {/* Preset chips */}
+        <div className="mb-3 flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p.id)}
+              className="rounded-full bg-kkang-cream px-3 py-1 text-xs shadow-soft hover:bg-kkang-pink"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Natural-language quick input */}
+        <div className="mb-3">
+          <label className="block text-xs text-kkang-ink/60">
+            자연어 추가 (선택) — 위 9개 항목과 함께 LLM에 전달됩니다
+          </label>
+          <div className="mt-1 flex gap-2">
+            <textarea
+              rows={2}
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              placeholder="예: 오늘 어린이집에서 시현이랑 블록으로 자동차 만들고 점심 잘 먹었어"
+              className="flex-1 rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={applyRawText}
+              className="rounded-xl bg-kkang-cream px-3 py-2 text-xs shadow-soft active:scale-[0.99]"
+            >
+              적용
+            </button>
+          </div>
+          {input.rawText ? (
+            <p className="mt-1 text-[10px] text-kkang-ink/50">
+              현재 첨부됨: "{input.rawText}"
+            </p>
+          ) : null}
+        </div>
+
+        {/* Editable structured fields (collapsible) */}
+        {editing ? (
+          <div className="grid grid-cols-1 gap-3 rounded-2xl bg-kkang-ivory p-3 text-xs sm:grid-cols-2">
+            <Field label="자녀 이름">
+              <input
+                type="text"
+                value={input.childName}
+                onChange={(e) => update("childName", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="월령">
+              <input
+                type="number"
+                value={input.childAgeMonths ?? 27}
+                onChange={(e) => update("childAgeMonths", Number(e.target.value))}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="장소 유형">
+              <input
+                type="text"
+                value={input.placeType ?? ""}
+                onChange={(e) => update("placeType", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="세부 공간">
+              <input
+                type="text"
+                value={input.placeDetail ?? ""}
+                onChange={(e) => update("placeDetail", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="있었던 일" full>
+              <textarea
+                rows={2}
+                value={input.eventText ?? ""}
+                onChange={(e) => update("eventText", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="친구 (쉼표로)">
+              <input
+                type="text"
+                value={(input.friends ?? []).join(", ")}
+                onChange={(e) => updateList("friends", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="기타 사람">
+              <input
+                type="text"
+                value={(input.others ?? []).join(", ")}
+                onChange={(e) => updateList("others", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="아이 행동" full>
+              <input
+                type="text"
+                value={(input.childActions ?? []).join(", ")}
+                onChange={(e) => updateList("childActions", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="좋아한 것" full>
+              <input
+                type="text"
+                value={(input.childPreferences ?? []).join(", ")}
+                onChange={(e) => updateList("childPreferences", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="실제 말">
+              <input
+                type="text"
+                value={input.childQuote ?? ""}
+                onChange={(e) => update("childQuote", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+            <Field label="감정">
+              <input
+                type="text"
+                value={(input.emotions ?? []).join(", ")}
+                onChange={(e) => updateList("emotions", e.target.value)}
+                className="w-full rounded-lg border border-kkang-beige bg-white px-2 py-1"
+              />
+            </Field>
+          </div>
+        ) : null}
+      </div>
+
       {ORDER.map((o, idx) => (
         <StageCard
           key={o.id}
@@ -359,6 +579,23 @@ export function PipelineTester() {
 }
 
 // --- Cards ---------------------------------------------------------------
+
+function Field({
+  label,
+  children,
+  full = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  full?: boolean;
+}) {
+  return (
+    <label className={`block ${full ? "sm:col-span-2" : ""}`}>
+      <span className="block text-[10px] text-kkang-ink/60">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 function StageCard({
   index,
