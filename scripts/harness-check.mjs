@@ -37,6 +37,9 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   // Settings UI references ElevenLabs by name in user-facing copy
   // (e.g. error messages directing the parent to set the API key).
   path.join("components", "parent-screen", "CacheStats.tsx"),
+  // AI story generator hits OpenAI / xAI chat completions. Gated behind
+  // LLM_VENDOR + key env; never reached in mock mode.
+  path.join("lib", "aiStoryGenerator.ts"),
 ]);
 
 const FORBIDDEN_APIS = [

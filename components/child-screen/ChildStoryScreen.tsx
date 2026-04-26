@@ -7,6 +7,7 @@ import { ParentGate } from "@/components/child-screen/ParentGate";
 import { KkangchongCharacter } from "@/components/character/KkangchongCharacter";
 import { FOOD_SHEET, type CISpriteFrame } from "@/lib/ciSheet";
 import { useSearchedImage } from "@/lib/imageSearcher";
+import { getTTSProvider } from "@/lib/providers";
 import { isUserGestureUnlocked, unlockAudio } from "@/lib/soundEngine";
 import type { VisualAsset } from "@/types/asset";
 import type { Character, CharacterMood } from "@/types/character";
@@ -63,35 +64,51 @@ export function ChildStoryScreen({
 
   const [needsTap, setNeedsTap] = useState(!isUserGestureUnlocked());
 
-  // Pre-recorded scene voice (parent's own mp3) — handoff §1.2.
-  // Browsers block audio until first user gesture; we track that and
-  // defer playback if needed.
+  // Scene voice playback chain (handoff §1.2):
+  //   1. scene.audioFile — parent's recorded mp3 (instant, free)
+  //   2. scene.spokenLine — TTS via cloned voice (cached, free after first)
+  //   3. silent
   useEffect(() => {
-    if (!scene.audioFile) return;
     if (typeof window === "undefined") return;
-    if (!isUserGestureUnlocked()) {
-      // Will play after the user taps the start overlay.
-      return;
-    }
-    const audio = new Audio(scene.audioFile);
-    audio.volume = 1.0;
-    void audio.play().catch(() => {
-      // file missing — silent
-    });
-    return () => {
-      audio.pause();
-      audio.currentTime = 0;
+    if (!isUserGestureUnlocked()) return;
+    let activeAudio: HTMLAudioElement | null = null;
+    let cancelled = false;
+
+    const playSceneVoice = async () => {
+      if (scene.audioFile) {
+        const audio = new Audio(scene.audioFile);
+        audio.volume = 1.0;
+        activeAudio = audio;
+        try {
+          await audio.play();
+          return; // file played, done
+        } catch {
+          // 404 or autoplay block — fall through to TTS
+        }
+      }
+      if (scene.spokenLine && !cancelled) {
+        try {
+          const tts = getTTSProvider();
+          await tts.speak(scene.spokenLine);
+        } catch {
+          // mock mode or missing key — silent
+        }
+      }
     };
-  }, [scene.audioFile, needsTap]);
+
+    void playSceneVoice();
+    return () => {
+      cancelled = true;
+      if (activeAudio) {
+        activeAudio.pause();
+        activeAudio.currentTime = 0;
+      }
+    };
+  }, [scene.audioFile, scene.spokenLine, needsTap]);
 
   const handleStartTap = () => {
     unlockAudio();
     setNeedsTap(false);
-    // Replay scene audio now that gesture is unlocked
-    if (scene.audioFile && typeof window !== "undefined") {
-      const audio = new Audio(scene.audioFile);
-      void audio.play().catch(() => undefined);
-    }
   };
 
   useEffect(() => {
@@ -103,6 +120,17 @@ export function ChildStoryScreen({
   const handleChoice = (choiceId: string) => {
     const choice = scene.choices.find((c) => c.id === choiceId);
     const glyph = choice?.emoji ?? "";
+
+    // Play 깡총이's reaction line for this choice (cached after first time).
+    if (choice?.responseLine) {
+      try {
+        const tts = getTTSProvider();
+        void tts.speak(choice.responseLine).catch(() => undefined);
+      } catch {
+        // silent in mock mode
+      }
+    }
+
     if (FOOD_GLYPHS.has(glyph)) {
       setFoodGlyph(glyph);
       setFoodPhase(1);

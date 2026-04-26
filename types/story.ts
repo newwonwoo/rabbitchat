@@ -3,6 +3,9 @@ export type Choice = {
   emoji: string;
   nextSceneId: string | null;
   parentLabel: string;
+  // What 깡총이 says immediately after the child picks this choice.
+  // Sent to TTS provider, cached forever per text.
+  responseLine?: string;
 };
 
 export type Scene = {
@@ -24,16 +27,22 @@ export type Scene = {
 
 export type StoryTag = "회상" | "모험" | "일상" | "잠자기" | "먹기" | "놀이";
 
+export type StoryStatus = "draft" | "published";
+
 export type Story = {
   id: string;
   themeId: string;
   title: string;
-  // Premium metadata
-  subtitle?: string;          // 짧은 한 줄 설명 (e.g. "오늘 어린이집에서 있었던 일")
-  coverEmoji?: string;        // 이미지 없을 때 폴백 (e.g. "🏫")
-  coverImageQuery?: string;   // Pexels 검색용 키워드 (e.g. "korean kindergarten")
+  subtitle?: string;
+  coverEmoji?: string;
+  coverImageQuery?: string;
   tags?: StoryTag[];
   estimatedMinutes?: number;
   scenes: Scene[];
   startSceneId: string;
+  // Authoring lifecycle
+  status?: StoryStatus;           // undefined for built-in stories
+  draftAt?: string;               // ISO when AI first generated
+  publishedAt?: string;           // ISO when parent deployed to child
+  generatedFromInput?: string;    // raw natural-language input (audit)
 };
