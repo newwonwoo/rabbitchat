@@ -8,6 +8,7 @@ import { CharacterManager } from "@/components/parent-screen/CharacterManager";
 import { ParentHome } from "@/components/parent-screen/ParentHome";
 import { ParentLogViewer } from "@/components/parent-screen/ParentLogViewer";
 import { ParentPlayMenu } from "@/components/parent-screen/ParentPlayMenu";
+import { PipelineTester } from "@/components/parent-screen/PipelineTester";
 import { PlaceManager } from "@/components/parent-screen/PlaceManager";
 import { SettingsPanel } from "@/components/parent-screen/SettingsPanel";
 import { StoryBuilder } from "@/components/parent-screen/StoryBuilder";
@@ -312,6 +313,7 @@ export default function HomePage() {
         onOpenPlaces={() => setUiMode("parent_places")}
         onOpenSettings={() => setUiMode("parent_settings")}
         onOpenBuilder={() => setUiMode("parent_builder")}
+        onOpenPipeline={() => setUiMode("parent_pipeline")}
         onReturnToChild={handleReturnToChild}
       />
     );
@@ -365,6 +367,7 @@ export default function HomePage() {
           />
         ) : null}
         {uiMode === "parent_builder" ? <StoryBuilder /> : null}
+        {uiMode === "parent_pipeline" ? <PipelineTester /> : null}
       </div>
     </main>
   );
@@ -382,6 +385,8 @@ function tabTitle(mode: UIMode): string {
       return "설정";
     case "parent_builder":
       return "이야기 만들기";
+    case "parent_pipeline":
+      return "🧪 파이프라인 테스터";
     default:
       return "부모 화면";
   }

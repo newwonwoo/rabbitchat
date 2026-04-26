@@ -40,6 +40,9 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   // AI story generator hits OpenAI / xAI chat completions. Gated behind
   // LLM_VENDOR + key env; never reached in mock mode.
   path.join("lib", "aiStoryGenerator.ts"),
+  // Pipeline tester displays "ElevenLabs" in user-facing copy
+  // (e.g. char-usage label). It does not call the API directly.
+  path.join("components", "parent-screen", "PipelineTester.tsx"),
 ]);
 
 const FORBIDDEN_APIS = [

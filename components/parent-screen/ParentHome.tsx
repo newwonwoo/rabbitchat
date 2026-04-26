@@ -14,6 +14,7 @@ type Props = {
   onOpenPlaces: () => void;
   onOpenSettings: () => void;
   onOpenBuilder: () => void;
+  onOpenPipeline: () => void;
   onReturnToChild: () => void;
 };
 
@@ -28,6 +29,7 @@ export function ParentHome({
   onOpenPlaces,
   onOpenSettings,
   onOpenBuilder,
+  onOpenPipeline,
   onReturnToChild,
 }: Props) {
   return (
@@ -56,6 +58,7 @@ export function ParentHome({
           <MenuTile label="캐릭터 선택" hint="깡총이/딸딸이" onPress={onOpenCharacters} />
           <MenuTile label="장소 관리" hint="장소 카탈로그" onPress={onOpenPlaces} />
           <MenuTile label="이야기 만들기" hint="새 이야기 추가" onPress={onOpenBuilder} />
+          <MenuTile label="🧪 파이프라인 테스터" hint="8단계 진단" onPress={onOpenPipeline} />
           <MenuTile label="설정" hint="볼륨·안전·데이터" onPress={onOpenSettings} className="col-span-2" />
         </div>
 

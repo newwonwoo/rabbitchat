@@ -9,7 +9,8 @@ export type UIMode =
   | "parent_characters"
   | "parent_places"
   | "parent_settings"
-  | "parent_builder";
+  | "parent_builder"
+  | "parent_pipeline";
 
 // Reserved for future expansion (harness §8). Currently MVP uses UIMode only.
 // type PlayPhase =
