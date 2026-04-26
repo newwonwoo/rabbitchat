@@ -12,22 +12,71 @@ type Props = {
   onPress: (choiceId: string) => void;
 };
 
+// In-process per-label cache to avoid re-hitting /api/character-pose
+// every render.
+const labelCache = new Map<string, string | null>();
+
+async function findInCharacterFolder(label: string): Promise<string | null> {
+  if (!label) return null;
+  if (labelCache.has(label)) return labelCache.get(label)!;
+  try {
+    const res = await fetch(
+      `/api/character-pose?label=${encodeURIComponent(label)}`,
+    );
+    if (!res.ok) {
+      labelCache.set(label, null);
+      return null;
+    }
+    const json = (await res.json()) as { ok: boolean; url: string | null };
+    const url = json.url ?? null;
+    labelCache.set(label, url);
+    return url;
+  } catch {
+    labelCache.set(label, null);
+    return null;
+  }
+}
+
 // Visual fallback chain (addendum §4.1 — emoji is the LAST resort):
-//   1. Local PNG at asset.imageUrl (e.g. /assets/obj_blocks.png)
-//   2. Pexels-searched image keyed by asset.label / parentLabel
-//   3. Emoji from asset.emojiFallback / choice.emoji
+//   1. Local PNG at asset.imageUrl
+//   2. /api/character-pose?label=<parentLabel>  — fuzzy match in
+//      public/assets/character/ (where the parent drops everything)
+//   3. Pexels-searched image (license-safe auto fetch)
+//   4. Emoji
 //
-// Parent override: parentLabel is shown as a small caption under the
-// image. This visibly violates harness §6.2 (no Korean on child screen)
-// but is enabled at the parent's explicit request — kept short and
-// deliberately small so it's hint-level not narrative.
+// Parent override: parentLabel is also rendered as a small caption.
 export function ChoiceImageButton({ choice, asset, onPress }: Props) {
   const localUrl = asset?.imageUrl;
   const queryLabel = asset?.label ?? choice.parentLabel;
-  const { url: searchedUrl } = useSearchedImage(queryLabel, "square");
 
-  type Tier = "local" | "searched" | "emoji";
-  const [tier, setTier] = useState<Tier>(localUrl ? "local" : "searched");
+  // Local PNG (data/assets.ts) tier
+  type Tier = "local" | "character" | "searched" | "emoji";
+  const [tier, setTier] = useState<Tier>(localUrl ? "local" : "character");
+  const [characterUrl, setCharacterUrl] = useState<string | null>(null);
+
+  // Tier 2: parent-uploaded folder
+  useEffect(() => {
+    if (tier !== "character") return;
+    let cancelled = false;
+    findInCharacterFolder(queryLabel).then((url) => {
+      if (cancelled) return;
+      if (url) {
+        setCharacterUrl(url);
+      } else {
+        setTier("searched");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tier, queryLabel]);
+
+  // Tier 3: Pexels (only enabled when we've fallen through to it)
+  const { url: searchedUrl } = useSearchedImage(
+    queryLabel,
+    "square",
+    tier === "searched",
+  );
 
   useEffect(() => {
     if (tier === "searched" && searchedUrl === null) {
@@ -38,16 +87,16 @@ export function ChoiceImageButton({ choice, asset, onPress }: Props) {
   const currentSrc =
     tier === "local"
       ? localUrl
-      : tier === "searched"
-        ? searchedUrl ?? undefined
-        : undefined;
+      : tier === "character"
+        ? characterUrl ?? undefined
+        : tier === "searched"
+          ? searchedUrl ?? undefined
+          : undefined;
 
   const handleError = () => {
-    if (tier === "local") {
-      setTier(searchedUrl ? "searched" : "emoji");
-    } else if (tier === "searched") {
-      setTier("emoji");
-    }
+    if (tier === "local") setTier("character");
+    else if (tier === "character") setTier("searched");
+    else if (tier === "searched") setTier("emoji");
   };
 
   return (

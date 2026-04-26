@@ -1,14 +1,14 @@
-// Lookup a character pose PNG by mood, with fuzzy filename matching.
+// Generic asset finder by label.
 //
-// Why this exists: the parent crops dozens of poses with non-standard names
-// like "kkangchong_happy.png", "행복.png", "웃는얼굴_v2.png", "kkang_smile.PNG"
-// — making them all match exactly is annoying. This route reads the
-// public/assets/character/ folder at request time and picks the best
+// Reads public/assets/character/ at request time and picks the best
 // filename whose lowercased name contains any synonym for the requested
-// mood.
+// label. Same folder holds character poses (happy/listening/...), food
+// actions (banana_bite/apple_hold/...), choice items (blocks/cart/...),
+// and place backdrops if the parent drops them in.
 //
-// Returns { ok, url } where url is "/assets/character/<file>" or null
-// when no match.
+// Param: ?label=<thing>   (also accepts ?mood=<thing> for backward compat)
+//
+// Returns { ok, url, matched, via }.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -17,35 +17,63 @@ import { NextResponse } from "next/server";
 
 const POSE_DIR = path.join(process.cwd(), "public", "assets", "character");
 
-// Synonyms checked in order; first hit wins.
+// Synonyms — Korean + English. First hit wins, so list the more specific
+// keywords first within a label group.
 const SYNONYMS: Record<string, string[]> = {
+  // --- moods ---
   happy: ["happy", "smile", "joy", "기쁨", "기쁜", "행복", "웃"],
-  listening: [
-    "listening",
-    "listen",
-    "idle",
-    "default",
-    "기본",
-    "듣기",
-    "기다",
-  ],
+  listening: ["listening", "listen", "idle", "default", "기본", "듣기", "기다"],
   waving: ["waving", "wave", "hi", "greet", "인사", "반가워", "손인사"],
-  thinking: [
-    "thinking",
-    "think",
-    "wonder",
-    "curious",
-    "생각",
-    "궁금",
-    "의문",
-  ],
+  thinking: ["thinking", "think", "wonder", "curious", "생각", "궁금", "의문"],
   jumping: ["jumping", "jump", "happy_jump", "점프", "신난", "뛰는"],
   sleepy: ["sleepy", "sleep", "drowsy", "졸림", "졸린", "잠"],
+
+  // --- food / drink actions ---
+  apple: ["apple", "사과"],
+  banana: ["banana", "바나나"],
+  strawberry: ["strawberry", "딸기"],
+  pear: ["pear", "배"],
+  milk: ["milk", "우유"],
+  water: ["water", "물"],
+  juice: ["juice", "주스", "음료"],
+  rice: ["rice", "밥"],
+  meal: ["meal", "식사", "반찬"],
+  chicken: ["chicken", "닭고기", "닭"],
+  kimchi: ["kimchi", "김치"],
+  noodle: ["noodle", "국수", "면"],
+  bite: ["bite", "한입", "먹기"],
+  chew: ["chew", "씹"],
+  swallow: ["swallow", "삼키"],
+
+  // --- play activities ---
+  blocks: ["blocks", "block", "블록"],
+  ball: ["ball", "공놀이", "공"],
+  book: ["book", "책읽기", "책"],
+  cart: ["cart", "카트"],
+
+  // --- places ---
+  kindergarten: ["kindergarten", "kinder", "어린이집", "유치원"],
+  mart: ["mart", "supermarket", "마트"],
+  park: ["park", "공원"],
+  home: ["home", "집"],
+  bedroom: ["bedroom", "bed", "침실", "잠자리"],
+
+  // --- friends / people ---
+  sihyun: ["sihyun", "시현"],
+  friend: ["friend", "친구"],
+  mom: ["mom", "엄마"],
+  dad: ["dad", "아빠"],
+
+  // --- misc ---
+  butterfly: ["butterfly", "나비"],
+  flower: ["flower", "꽃"],
+  bird: ["bird", "새"],
+  tree: ["tree", "나무"],
 };
 
 let cachedFiles: string[] | null = null;
 let cachedAt = 0;
-const CACHE_MS = 30_000; // refresh every 30s in dev
+const CACHE_MS = 30_000;
 
 async function listFiles(): Promise<string[]> {
   const now = Date.now();
@@ -62,11 +90,30 @@ async function listFiles(): Promise<string[]> {
   }
 }
 
+function expandSynonyms(label: string): string[] {
+  const lc = label.toLowerCase();
+  // Direct key match
+  if (SYNONYMS[lc]) return SYNONYMS[lc];
+  // Synonym in any group → return that group
+  for (const group of Object.values(SYNONYMS)) {
+    if (group.some((g) => g.toLowerCase() === lc)) return group;
+  }
+  // Substring partial match
+  for (const group of Object.values(SYNONYMS)) {
+    if (group.some((g) => lc.includes(g.toLowerCase()) || g.toLowerCase().includes(lc))) {
+      return [lc, ...group];
+    }
+  }
+  return [lc];
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const mood = (searchParams.get("mood") ?? "").toLowerCase().trim();
-  if (!mood) {
-    return NextResponse.json({ ok: false, error: "missing mood" });
+  const label = (searchParams.get("label") ?? searchParams.get("mood") ?? "")
+    .toLowerCase()
+    .trim();
+  if (!label) {
+    return NextResponse.json({ ok: false, error: "missing label" });
   }
 
   const files = await listFiles();
@@ -74,9 +121,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, url: null, reason: "no files" });
   }
 
-  const synonyms = SYNONYMS[mood] ?? [mood];
+  const candidates = expandSynonyms(label);
 
-  for (const syn of synonyms) {
+  for (const syn of candidates) {
     const lower = syn.toLowerCase();
     const match = files.find((f) => f.toLowerCase().includes(lower));
     if (match) {

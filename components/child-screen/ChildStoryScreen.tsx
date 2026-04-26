@@ -143,19 +143,45 @@ export function ChildStoryScreen({
   // Cap on-screen choices to 3 (handoff §3.3 — 화면엔 2개 중심, 최대 3개)
   const visibleChoices = scene.choices.slice(0, 3);
 
-  // Background fallback chain: local PNG → Pexels-searched → null (emoji visual row).
-  const { url: searchedBg } = useSearchedImage(
-    backgroundAsset?.label,
-    "landscape",
-    !backgroundAsset?.imageUrl,
+  // Background fallback chain:
+  //   1. Local PNG at backgroundAsset.imageUrl (data/assets.ts)
+  //   2. /api/character-pose?label=... — match in public/assets/character/
+  //   3. Pexels searched
+  //   4. null (emoji visual row stays)
+  const bgLabel = backgroundAsset?.label ?? scene.placeId ?? "";
+  const [bgTier, setBgTier] = useState<"local" | "character" | "searched" | "none">(
+    backgroundAsset?.imageUrl ? "local" : "character",
   );
-  const [bgTier, setBgTier] = useState<"local" | "searched" | "none">(
-    backgroundAsset?.imageUrl ? "local" : "searched",
-  );
+  const [characterBg, setCharacterBg] = useState<string | null>(null);
 
   useEffect(() => {
-    setBgTier(backgroundAsset?.imageUrl ? "local" : "searched");
-  }, [backgroundAsset?.imageUrl]);
+    setBgTier(backgroundAsset?.imageUrl ? "local" : "character");
+    setCharacterBg(null);
+  }, [backgroundAsset?.imageUrl, bgLabel]);
+
+  useEffect(() => {
+    if (bgTier !== "character") return;
+    let cancelled = false;
+    fetch(`/api/character-pose?label=${encodeURIComponent(bgLabel)}`)
+      .then((r) => r.json())
+      .then((j: { ok: boolean; url: string | null }) => {
+        if (cancelled) return;
+        if (j.url) setCharacterBg(j.url);
+        else setBgTier("searched");
+      })
+      .catch(() => {
+        if (!cancelled) setBgTier("searched");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bgTier, bgLabel]);
+
+  const { url: searchedBg } = useSearchedImage(
+    bgLabel,
+    "landscape",
+    bgTier === "searched",
+  );
 
   useEffect(() => {
     if (bgTier === "searched" && searchedBg === null) setBgTier("none");
@@ -164,9 +190,11 @@ export function ChildStoryScreen({
   const bgSrc =
     bgTier === "local"
       ? backgroundAsset?.imageUrl
-      : bgTier === "searched"
-        ? searchedBg ?? undefined
-        : undefined;
+      : bgTier === "character"
+        ? characterBg ?? undefined
+        : bgTier === "searched"
+          ? searchedBg ?? undefined
+          : undefined;
   const showBigBg = !!bgSrc;
 
   return (
@@ -199,11 +227,9 @@ export function ChildStoryScreen({
           aria-hidden
           className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-80"
           onError={() => {
-            if (bgTier === "local") {
-              setBgTier(searchedBg ? "searched" : "none");
-            } else {
-              setBgTier("none");
-            }
+            if (bgTier === "local") setBgTier("character");
+            else if (bgTier === "character") setBgTier("searched");
+            else setBgTier("none");
           }}
         />
       ) : null}
