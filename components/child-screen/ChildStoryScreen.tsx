@@ -6,6 +6,7 @@ import { ChoiceImageButton } from "@/components/child-screen/ChoiceImageButton";
 import { ParentGate } from "@/components/child-screen/ParentGate";
 import { KkangchongCharacter } from "@/components/character/KkangchongCharacter";
 import { FOOD_SHEET, type CISpriteFrame } from "@/lib/ciSheet";
+import { useSearchedImage } from "@/lib/imageSearcher";
 import type { VisualAsset } from "@/types/asset";
 import type { Character, CharacterMood } from "@/types/character";
 import type { Scene } from "@/types/story";
@@ -108,22 +109,50 @@ export function ChildStoryScreen({
   // Cap on-screen choices to 3 (handoff §3.3 — 화면엔 2개 중심, 최대 3개)
   const visibleChoices = scene.choices.slice(0, 3);
 
-  const showBigBg = backgroundAsset && backgroundAsset.imageUrl;
+  // Background fallback chain: local PNG → Pexels-searched → null (emoji visual row).
+  const { url: searchedBg } = useSearchedImage(
+    backgroundAsset?.label,
+    "landscape",
+    !backgroundAsset?.imageUrl,
+  );
+  const [bgTier, setBgTier] = useState<"local" | "searched" | "none">(
+    backgroundAsset?.imageUrl ? "local" : "searched",
+  );
+
+  useEffect(() => {
+    setBgTier(backgroundAsset?.imageUrl ? "local" : "searched");
+  }, [backgroundAsset?.imageUrl]);
+
+  useEffect(() => {
+    if (bgTier === "searched" && searchedBg === null) setBgTier("none");
+  }, [bgTier, searchedBg]);
+
+  const bgSrc =
+    bgTier === "local"
+      ? backgroundAsset?.imageUrl
+      : bgTier === "searched"
+        ? searchedBg ?? undefined
+        : undefined;
+  const showBigBg = !!bgSrc;
 
   return (
     <main
       aria-label="child-story"
       className="relative flex min-h-screen flex-col items-center justify-between overflow-hidden bg-gradient-to-b from-kkang-ivory via-kkang-cream to-kkang-beige px-6 pb-10 pt-6"
     >
-      {showBigBg ? (
+      {showBigBg && bgSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={backgroundAsset!.imageUrl}
+          src={bgSrc}
           alt=""
           aria-hidden
           className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-80"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
+          onError={() => {
+            if (bgTier === "local") {
+              setBgTier(searchedBg ? "searched" : "none");
+            } else {
+              setBgTier("none");
+            }
           }}
         />
       ) : null}

@@ -13,9 +13,9 @@
 // Hit on second call → no network, no cost.
 
 const DB_NAME = "rabbitchat-ai-cache";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-export type CacheStoreName = "tts" | "llm";
+export type CacheStoreName = "tts" | "llm" | "img";
 
 type CacheEntry<T> = {
   key: string;
@@ -41,6 +41,9 @@ function openDb(): Promise<IDBDatabase | null> {
       }
       if (!db.objectStoreNames.contains("llm")) {
         db.createObjectStore("llm", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("img")) {
+        db.createObjectStore("img", { keyPath: "key" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -117,6 +120,23 @@ export async function putCachedText(key: string, text: string): Promise<void> {
   });
 }
 
+// Image-search URL cache. Keyed by hash(query + orientation) → resolved
+// CDN URL. Stores the URL string only, not the binary (browsers cache
+// the binary natively from the <img src>).
+export async function getCachedImageUrl(key: string): Promise<string | null> {
+  const e = await getEntry<string>("img", key);
+  return e?.text ?? null;
+}
+
+export async function putCachedImageUrl(key: string, url: string): Promise<void> {
+  await putEntry("img", {
+    key,
+    ts: Date.now(),
+    bytes: url.length * 2,
+    text: url,
+  });
+}
+
 // --- Stats / management ---------------------------------------------------
 
 export type CacheStats = {
@@ -124,12 +144,21 @@ export type CacheStats = {
   ttsBytes: number;
   llmCount: number;
   llmBytes: number;
+  imgCount: number;
+  imgBytes: number;
 };
 
 export async function getCacheStats(): Promise<CacheStats> {
   const db = await openDb();
   if (!db) {
-    return { ttsCount: 0, ttsBytes: 0, llmCount: 0, llmBytes: 0 };
+    return {
+      ttsCount: 0,
+      ttsBytes: 0,
+      llmCount: 0,
+      llmBytes: 0,
+      imgCount: 0,
+      imgBytes: 0,
+    };
   }
   const tally = (store: CacheStoreName) =>
     new Promise<{ count: number; bytes: number }>((resolve) => {
@@ -150,19 +179,25 @@ export async function getCacheStats(): Promise<CacheStats> {
       };
       req.onerror = () => resolve({ count: 0, bytes: 0 });
     });
-  const [tts, llm] = await Promise.all([tally("tts"), tally("llm")]);
+  const [tts, llm, img] = await Promise.all([
+    tally("tts"),
+    tally("llm"),
+    tally("img"),
+  ]);
   return {
     ttsCount: tts.count,
     ttsBytes: tts.bytes,
     llmCount: llm.count,
     llmBytes: llm.bytes,
+    imgCount: img.count,
+    imgBytes: img.bytes,
   };
 }
 
 export async function clearCache(store?: CacheStoreName): Promise<void> {
   const db = await openDb();
   if (!db) return;
-  const stores: CacheStoreName[] = store ? [store] : ["tts", "llm"];
+  const stores: CacheStoreName[] = store ? [store] : ["tts", "llm", "img"];
   for (const s of stores) {
     await new Promise<void>((resolve) => {
       const tx = db.transaction(s, "readwrite");
