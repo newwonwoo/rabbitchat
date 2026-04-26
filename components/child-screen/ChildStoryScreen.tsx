@@ -22,6 +22,8 @@ type Props = {
   onCharacterPress: () => void;
   onChoice: (choiceId: string) => void;
   onParentEnter: () => void;
+  onGoHome: () => void;
+  onReplay: () => void;
 };
 
 const SLEEPY_AFTER_MS = 30_000;
@@ -37,6 +39,8 @@ export function ChildStoryScreen({
   onCharacterPress,
   onChoice,
   onParentEnter,
+  onGoHome,
+  onReplay,
 }: Props) {
   const visualGlyphs = Array.from(scene.visual);
   const [transitionMood, setTransitionMood] = useState<CharacterMood | null>(
@@ -216,52 +220,93 @@ export function ChildStoryScreen({
         <ParentGate onUnlock={onParentEnter} />
       </div>
 
-      <div
-        aria-label="scene-visual"
-        className="z-10 mt-10 flex flex-wrap items-center justify-center gap-3 text-7xl"
+      {/* Home button (top-left, child-discoverable) */}
+      <button
+        type="button"
+        onClick={onGoHome}
+        aria-label="홈으로 돌아가기"
+        className="absolute left-4 top-4 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-2xl shadow-soft active:scale-95"
       >
-        {isFoodSequence ? (
-          <FoodSpriteFrame glyph={foodGlyph!} phase={foodPhase} />
-        ) : (
-          // When a backgroundAsset is rendered we skip the emoji visual to
-          // avoid double-rendering the place; otherwise emoji glyph row.
-          !showBigBg &&
-          visualGlyphs.map((g, i) => (
-            <span key={`${scene.id}-glyph-${i}`} aria-hidden>
-              {g}
-            </span>
-          ))
-        )}
-      </div>
+        <span aria-hidden>🏠</span>
+      </button>
 
-      <div className="z-10 my-6 flex justify-center">
-        <KkangchongCharacter
-          character={character}
-          isPlaying={isAudioPlaying}
-          mood={characterMood}
-          size="lg"
-          onPress={onCharacterPress}
-        />
-      </div>
+      {/* Two-column layout: 깡총이 (left) + choice banners (right).
+          Stacks vertically on narrow screens. */}
+      <div className="z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col items-center gap-8 px-6 py-8 lg:flex-row lg:items-stretch lg:gap-12 lg:py-16">
+        {/* Left column — character */}
+        <div className="flex flex-1 flex-col items-center justify-center gap-6">
+          {!showBigBg && !isFoodSequence ? (
+            <div
+              aria-label="scene-visual"
+              className="flex flex-wrap items-center justify-center gap-3 text-6xl"
+            >
+              {visualGlyphs.map((g, i) => (
+                <span key={`${scene.id}-glyph-${i}`} aria-hidden>
+                  {g}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {isFoodSequence ? (
+            <FoodSpriteFrame glyph={foodGlyph!} phase={foodPhase} />
+          ) : null}
+          <KkangchongCharacter
+            character={character}
+            isPlaying={isAudioPlaying}
+            mood={characterMood}
+            size="xl"
+            onPress={onCharacterPress}
+          />
+        </div>
 
-      <div
-        aria-label="choices"
-        className="z-10 flex w-full max-w-md flex-wrap items-center justify-center gap-5"
-      >
-        {!isFoodSequence &&
-          visibleChoices.map((c) => (
-            <ChoiceImageButton
-              key={c.id}
-              choice={c}
-              asset={choiceAssets?.[c.id]}
-              onPress={handleChoice}
-            />
-          ))}
-        {!isFoodSequence && visibleChoices.length === 0 ? (
-          <span aria-label="story-end" className="text-6xl">
-            <span aria-hidden>✨</span>
-          </span>
-        ) : null}
+        {/* Right column — choice banners */}
+        <div
+          aria-label="choices"
+          className="flex w-full max-w-md flex-1 flex-col justify-center gap-4 lg:max-w-lg"
+        >
+          {!isFoodSequence &&
+            visibleChoices.map((c) => (
+              <ChoiceImageButton
+                key={c.id}
+                choice={c}
+                asset={choiceAssets?.[c.id]}
+                onPress={handleChoice}
+                variant="banner"
+              />
+            ))}
+          {!isFoodSequence && visibleChoices.length === 0 ? (
+            <div
+              aria-label="story-end"
+              className="flex flex-col items-center gap-5 rounded-[28px] bg-white/80 p-6 shadow-card"
+            >
+              <span aria-hidden className="text-6xl">✨</span>
+              <div className="flex w-full flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={onReplay}
+                  aria-label="다시 들을래"
+                  className="flex w-full items-center gap-4 rounded-2xl bg-kkang-pink p-4 shadow-pop transition-transform active:scale-[0.98]"
+                >
+                  <span aria-hidden className="text-4xl">🔁</span>
+                  <span className="text-xl font-bold text-kkang-ink">
+                    다시 들을래
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onGoHome}
+                  aria-label="다른 이야기"
+                  className="flex w-full items-center gap-4 rounded-2xl bg-kkang-cream p-4 shadow-pop transition-transform active:scale-[0.98]"
+                >
+                  <span aria-hidden className="text-4xl">🏠</span>
+                  <span className="text-xl font-bold text-kkang-ink">
+                    다른 이야기
+                  </span>
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </main>
   );

@@ -10,6 +10,7 @@ type Props = {
   choice: Choice;
   asset?: VisualAsset;
   onPress: (choiceId: string) => void;
+  variant?: "card" | "banner";
 };
 
 // In-process per-label cache to avoid re-hitting /api/character
@@ -45,7 +46,7 @@ async function findInCharacterFolder(label: string): Promise<string | null> {
 //   4. Emoji
 //
 // Parent override: parentLabel is also rendered as a small caption.
-export function ChoiceImageButton({ choice, asset, onPress }: Props) {
+export function ChoiceImageButton({ choice, asset, onPress, variant = "card" }: Props) {
   const localUrl = asset?.imageUrl;
   const queryLabel = asset?.label ?? choice.parentLabel;
 
@@ -98,6 +99,43 @@ export function ChoiceImageButton({ choice, asset, onPress }: Props) {
     else if (tier === "character") setTier("searched");
     else if (tier === "searched") setTier("emoji");
   };
+
+  if (variant === "banner") {
+    return (
+      <button
+        type="button"
+        onClick={() => onPress(choice.id)}
+        aria-label={choice.parentLabel}
+        className="group flex w-full items-center gap-5 rounded-[28px] bg-white p-4 shadow-card transition-transform active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-kkang-pink/60"
+      >
+        <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-kkang-cream text-7xl">
+          {currentSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={currentSrc}
+              alt=""
+              aria-hidden
+              className="h-full w-full object-cover"
+              onError={handleError}
+            />
+          ) : (
+            <span aria-hidden>{asset?.emojiFallback ?? choice.emoji}</span>
+          )}
+        </div>
+        <div className="flex flex-1 items-center justify-between gap-3">
+          <span className="text-2xl font-bold text-kkang-ink">
+            {choice.parentLabel}
+          </span>
+          <span
+            aria-hidden
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-kkang-pink text-xl shadow-pop transition-transform group-active:scale-90"
+          >
+            ▶️
+          </span>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <button

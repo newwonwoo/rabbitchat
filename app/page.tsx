@@ -292,6 +292,8 @@ export default function HomePage() {
         onCharacterPress={handleCharacterPress}
         onChoice={handleChoice}
         onParentEnter={handleParentEnter}
+        onGoHome={() => setUiMode("home")}
+        onReplay={handleRestart}
       />
     );
   }
