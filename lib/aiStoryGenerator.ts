@@ -71,34 +71,8 @@ export class AIGeneratorError extends Error {
   }
 }
 
-// Multi-provider config. xAI Grok exposes an OpenAI-compatible chat
-// completions endpoint, so the same code path works for both — only
-// base URL + model + key differ. Pick via LLM_VENDOR env.
-type LLMVendor = "openai" | "grok";
-
-type VendorConfig = {
-  baseUrl: string;
-  model: string;
-  envKey: string;
-};
-
-const VENDOR_CONFIG: Record<LLMVendor, VendorConfig> = {
-  openai: {
-    baseUrl: "https://api.openai.com/v1/chat/completions",
-    model: "gpt-4o-mini",
-    envKey: "OPENAI_API_KEY",
-  },
-  grok: {
-    baseUrl: "https://api.x.ai/v1/chat/completions",
-    model: "grok-2-latest",
-    envKey: "GROK_API_KEY",
-  },
-};
-
-function getVendor(): LLMVendor {
-  const raw = process.env.LLM_VENDOR;
-  return raw === "grok" ? "grok" : "openai";
-}
+// Multi-provider config (OpenAI / Grok) lives server-side only —
+// see app/api/generate-story/route.ts. Client never sees the API key.
 
 const SCHEMA_INSTRUCTION = `
 JSON 스키마 (이 형식만 출력. 마크다운 펜스/주석/설명 금지):
@@ -269,64 +243,6 @@ type RawAIStory = {
   scenes: RawAIScene[];
 };
 
-async function callLLM(systemPrompt: string, userMsg: string): Promise<{ content: string; vendor: LLMVendor; model: string }> {
-  const vendor = getVendor();
-  const cfg = VENDOR_CONFIG[vendor];
-  const key = process.env[cfg.envKey];
-  if (!key) {
-    throw new AIGeneratorError(
-      `${cfg.envKey}가 설정되지 않았습니다.`,
-      ".env.local 에 키를 추가하고 dev 서버를 재시작해 주세요.",
-    );
-  }
-  const res = await fetch(cfg.baseUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMsg },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    // Friendlier diagnostics for the most common "key is set but it failed" cases
-    let hint = body.slice(0, 240);
-    if (res.status === 401) {
-      hint = "API 키가 잘못됐거나 만료됨. .env.local 다시 확인 + dev 서버 재시작.";
-    } else if (res.status === 429) {
-      hint = body.includes("insufficient_quota") || body.includes("billing")
-        ? "잔액 부족 또는 결제 미완료. 플랫폼 콘솔에서 충전 후 재시도. (OpenAI: https://platform.openai.com/usage)"
-        : "rate limit 초과. 1~2분 대기 후 재시도.";
-    } else if (res.status === 403) {
-      hint = "권한 부족. 키 권한(scope) 확인.";
-    } else if (res.status === 404) {
-      hint = `모델(${cfg.model}) 접근 불가. 키가 해당 모델 사용 권한이 있는지 확인.`;
-    } else if (res.status >= 500) {
-      hint = `${vendor} 서버 일시 장애. 잠시 후 재시도.`;
-    }
-    throw new AIGeneratorError(
-      `${vendor} returned ${res.status}`,
-      hint,
-    );
-  }
-  const json = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  return {
-    content: json.choices?.[0]?.message?.content ?? "",
-    vendor,
-    model: cfg.model,
-  };
-}
-
 function sanitizeStory(raw: RawAIStory, input: AuthorInput): Story {
   const id = `auto_${Date.now().toString(36)}`;
   const scenes: Scene[] = raw.scenes.map((s) => {
@@ -379,31 +295,23 @@ export async function generateStoryWithAI(input: AuthorInput): Promise<Story> {
     );
   }
 
-  const systemPrompt = `${CHARACTER_VOICE_SYSTEM_PROMPT}\n\n${SCHEMA_INSTRUCTION}`;
   const userMsg = buildUserMessage(input);
 
-  const vendor = getVendor();
-  const model = VENDOR_CONFIG[vendor].model;
-
-  const cacheKey = await hashKey(["aistory", vendor, model, systemPrompt, userMsg]);
+  // Cache by user message — server uses the same systemPrompt internally.
+  const cacheKey = await hashKey(["aistory.v2", userMsg]);
   const cached = await getCachedText(cacheKey);
-  let rawJson: string;
-  if (cached) {
-    rawJson = cached;
-  } else {
-    const result = await callLLM(systemPrompt, userMsg);
-    rawJson = result.content;
-    await putCachedText(cacheKey, rawJson);
-  }
-
   let parsed: RawAIStory;
-  try {
-    parsed = JSON.parse(rawJson) as RawAIStory;
-  } catch (e) {
-    throw new AIGeneratorError(
-      "AI 응답을 JSON으로 파싱하지 못했습니다.",
-      (e as Error).message,
-    );
+  if (cached) {
+    try {
+      parsed = JSON.parse(cached) as RawAIStory;
+    } catch {
+      // cache poisoned — fall through to refetch
+      parsed = (await callServerRoute(userMsg)) as RawAIStory;
+      await putCachedText(cacheKey, JSON.stringify(parsed));
+    }
+  } else {
+    parsed = (await callServerRoute(userMsg)) as RawAIStory;
+    await putCachedText(cacheKey, JSON.stringify(parsed));
   }
 
   if (!parsed.scenes || parsed.scenes.length === 0) {
@@ -411,4 +319,33 @@ export async function generateStoryWithAI(input: AuthorInput): Promise<Story> {
   }
 
   return sanitizeStory(parsed, input);
+}
+
+// Calls the server route /api/generate-story. The OPENAI_API_KEY only
+// exists server-side; client-side process.env doesn't see it. Failures
+// surface with friendly Korean hints (401 / 429 / 403 / etc.).
+async function callServerRoute(userMessage: string): Promise<RawAIStory> {
+  let res: Response;
+  try {
+    res = await fetch("/api/generate-story", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userMessage }),
+    });
+  } catch (e) {
+    throw new AIGeneratorError("/api/generate-story 호출 실패", (e as Error).message);
+  }
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    hint?: string;
+    story?: unknown;
+  };
+  if (!res.ok || !json.ok) {
+    throw new AIGeneratorError(
+      json.error || `/api/generate-story returned ${res.status}`,
+      json.hint,
+    );
+  }
+  return json.story as RawAIStory;
 }

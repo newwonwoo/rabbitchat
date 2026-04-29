@@ -47,6 +47,8 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   path.join("app", "api", "env-check", "route.ts"),
   // Natural-language parser route legitimately calls OpenAI/Grok server-side.
   path.join("app", "api", "parse-natural", "route.ts"),
+  // Story generator server route — same exemption rationale.
+  path.join("app", "api", "generate-story", "route.ts"),
 ]);
 
 const FORBIDDEN_APIS = [
