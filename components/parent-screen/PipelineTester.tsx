@@ -167,6 +167,73 @@ export function PipelineTester() {
     setInput((prev) => ({ ...prev, rawText: rawText.trim() || undefined }));
   };
 
+  // Parse the natural-language textarea into 9 form fields via LLM.
+  // Auto-switches mode to "form" so the parsed values actually get used.
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const parseNatural = async () => {
+    if (!rawText.trim()) {
+      setParseError("자연어 textarea가 비어 있습니다.");
+      return;
+    }
+    setParseError(null);
+    setParsing(true);
+    try {
+      const res = await fetch("/api/parse-natural", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: rawText.trim() }),
+      });
+      const j = (await res.json()) as { ok: boolean; fields?: Record<string, unknown>; error?: string };
+      if (!j.ok || !j.fields) {
+        setParseError(j.error || "변환 실패");
+        return;
+      }
+      const f = j.fields;
+      setInput((prev) => ({
+        ...prev,
+        placeType: typeof f.placeType === "string" && f.placeType ? f.placeType : prev.placeType,
+        placeDetail: typeof f.placeDetail === "string" ? f.placeDetail : prev.placeDetail,
+        eventText: typeof f.eventText === "string" && f.eventText ? f.eventText : prev.eventText,
+        friends: Array.isArray(f.friends) ? (f.friends as string[]) : prev.friends,
+        others: Array.isArray(f.others) ? (f.others as string[]) : prev.others,
+        childActions: Array.isArray(f.childActions) ? (f.childActions as string[]) : prev.childActions,
+        childPreferences: Array.isArray(f.childPreferences) ? (f.childPreferences as string[]) : prev.childPreferences,
+        childQuote: typeof f.childQuote === "string" ? f.childQuote : prev.childQuote,
+        emotions: Array.isArray(f.emotions) ? (f.emotions as string[]) : prev.emotions,
+        goals: Array.isArray(f.goals) ? (f.goals as ("회상"|"순서"|"어휘"|"감정"|"사회성")[]) : prev.goals,
+        repeatMode:
+          f.repeatMode === "repeat" || f.repeatMode === "new" || f.repeatMode === "variation"
+            ? f.repeatMode
+            : prev.repeatMode,
+      }));
+      setEditing(true);
+      setInputMode("form");
+    } catch (e) {
+      setParseError((e as Error).message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  // Env check — reads /api/env-check on mount.
+  type EnvCheck = {
+    NEXT_PUBLIC_PROVIDER: string | null;
+    LLM_VENDOR?: string;
+    OPENAI_API_KEY: { present: boolean; length: number };
+    GROK_API_KEY?: { present: boolean; length: number };
+    ELEVENLABS_API_KEY: { present: boolean; length: number };
+    ELEVENLABS_VOICE_ID: { present: boolean; length: number };
+    PEXELS_API_KEY: { present: boolean; length: number };
+  };
+  const [envCheck, setEnvCheck] = useState<EnvCheck | null>(null);
+  useEffect(() => {
+    fetch("/api/env-check")
+      .then((r) => r.json())
+      .then((j: EnvCheck) => setEnvCheck(j))
+      .catch(() => undefined);
+  }, []);
+
   // Compose the actual input that gets sent to the LLM, based on mode.
   const composeInput = (): AuthorInput => {
     if (inputMode === "natural") {
@@ -409,24 +476,65 @@ export function PipelineTester() {
         </div>
       </header>
 
-      {/* Provider diagnostic — helps when "키는 있는데 실패한다" */}
+      {/* Provider diagnostic — server reads .env.local so this is the
+          source of truth, not the client bundle. */}
       <div className="rounded-2xl bg-kkang-cream/70 p-3 text-xs shadow-soft">
-        <div className="font-semibold text-kkang-ink">환경 진단</div>
-        <ul className="mt-1 space-y-0.5 text-kkang-ink/70">
-          <li>
-            NEXT_PUBLIC_PROVIDER ={" "}
-            <code className="rounded bg-white/60 px-1">{getProviderMode()}</code>{" "}
-            {realMode
-              ? "✅"
-              : "⚠️ 'real'로 설정해야 LLM/TTS 실제 호출. .env.local 확인 후 dev 재시작."}
-          </li>
-          <li>
-            <span className="text-kkang-ink/50">
-              참고: 401(잘못된 키) / 429(rate or 잔액부족) / 404(모델 권한 없음) 같은 상태는 #2
-              시나리오 단계에서 사유와 함께 표시됩니다.
-            </span>
-          </li>
-        </ul>
+        <div className="font-semibold text-kkang-ink">환경 진단 (.env.local)</div>
+        {envCheck ? (
+          <ul className="mt-1 grid grid-cols-1 gap-0.5 text-kkang-ink/80 sm:grid-cols-2">
+            <li>
+              NEXT_PUBLIC_PROVIDER ={" "}
+              <code className="rounded bg-white/60 px-1">
+                {envCheck.NEXT_PUBLIC_PROVIDER ?? "(unset)"}
+              </code>{" "}
+              {envCheck.NEXT_PUBLIC_PROVIDER === "real" ? "✅" : "⚠️ 'real' 필요"}
+            </li>
+            <li>
+              LLM_VENDOR ={" "}
+              <code className="rounded bg-white/60 px-1">
+                {envCheck.LLM_VENDOR ?? "openai"}
+              </code>
+            </li>
+            <li>
+              OPENAI_API_KEY {envCheck.OPENAI_API_KEY.present ? "✅" : "❌"}{" "}
+              <span className="text-kkang-ink/50">
+                ({envCheck.OPENAI_API_KEY.length}자)
+              </span>
+            </li>
+            <li>
+              ELEVENLABS_API_KEY{" "}
+              {envCheck.ELEVENLABS_API_KEY.present ? "✅" : "❌"}{" "}
+              <span className="text-kkang-ink/50">
+                ({envCheck.ELEVENLABS_API_KEY.length}자)
+              </span>
+            </li>
+            <li>
+              ELEVENLABS_VOICE_ID{" "}
+              {envCheck.ELEVENLABS_VOICE_ID.present ? "✅" : "❌"}{" "}
+              <span className="text-kkang-ink/50">
+                ({envCheck.ELEVENLABS_VOICE_ID.length}자)
+              </span>
+            </li>
+            <li>
+              PEXELS_API_KEY{" "}
+              {envCheck.PEXELS_API_KEY.present ? "✅" : "❌"}{" "}
+              <span className="text-kkang-ink/50">
+                ({envCheck.PEXELS_API_KEY.length}자)
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <p className="mt-1 text-kkang-ink/50">진단 불러오는 중…</p>
+        )}
+        {envCheck && !envCheck.OPENAI_API_KEY.present ? (
+          <p className="mt-2 rounded-xl bg-yellow-100 p-2 text-yellow-900">
+            <strong>OPENAI_API_KEY 미인식.</strong> 흔한 원인:
+            <br />• 파일 이름이 <code>.env.local.txt</code> (Notepad 자동 확장자)
+            <br />• <code>.env.local</code>이 아니라 <code>.env</code>에 넣음
+            <br />• 키 앞뒤 공백 또는 따옴표 들어감
+            <br />• <strong>dev 서버 재시작 안 함</strong> (env는 서버 시작 시 1회만 읽음)
+          </p>
+        ) : null}
       </div>
 
       {/* Input section — mode toggle + preset + free text + structured edit */}
@@ -510,14 +618,28 @@ export function PipelineTester() {
               placeholder="예: 오늘 어린이집에서 시현이랑 블록으로 자동차 만들고 점심 잘 먹었어"
               className="flex-1 rounded-xl border border-kkang-beige bg-kkang-ivory px-3 py-2 text-sm"
             />
-            <button
-              type="button"
-              onClick={applyRawText}
-              className="rounded-xl bg-kkang-cream px-3 py-2 text-xs shadow-soft active:scale-[0.99]"
-            >
-              적용
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={applyRawText}
+                className="rounded-xl bg-kkang-cream px-3 py-2 text-xs shadow-soft active:scale-[0.99]"
+              >
+                적용
+              </button>
+              <button
+                type="button"
+                onClick={parseNatural}
+                disabled={parsing || !rawText.trim()}
+                className="rounded-xl bg-kkang-pink px-3 py-2 text-xs font-bold shadow-pop active:scale-[0.99] disabled:opacity-50"
+                title="LLM이 자연어를 9개 폼 항목으로 자동 분해합니다"
+              >
+                {parsing ? "변환중…" : "✨ 폼으로"}
+              </button>
+            </div>
           </div>
+          {parseError ? (
+            <p className="mt-1 text-[10px] text-red-700">{parseError}</p>
+          ) : null}
           {input.rawText ? (
             <p className="mt-1 text-[10px] text-kkang-ink/50">
               현재 첨부됨: "{input.rawText}"

@@ -43,6 +43,10 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   // Pipeline tester displays "ElevenLabs" in user-facing copy
   // (e.g. char-usage label). It does not call the API directly.
   path.join("components", "parent-screen", "PipelineTester.tsx"),
+  // Env diagnostic route names ElevenLabs env vars.
+  path.join("app", "api", "env-check", "route.ts"),
+  // Natural-language parser route legitimately calls OpenAI/Grok server-side.
+  path.join("app", "api", "parse-natural", "route.ts"),
 ]);
 
 const FORBIDDEN_APIS = [

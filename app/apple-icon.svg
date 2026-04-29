@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#F6F1E8" rx="96"/>
+  <!-- ears -->
+  <ellipse cx="190" cy="170" rx="28" ry="80" fill="#F6F1E8" stroke="#2B2B2B" stroke-width="10"/>
+  <ellipse cx="190" cy="170" rx="14" ry="50" fill="#F7D7DA"/>
+  <ellipse cx="322" cy="170" rx="28" ry="80" fill="#F6F1E8" stroke="#2B2B2B" stroke-width="10"/>
+  <ellipse cx="322" cy="170" rx="14" ry="50" fill="#F7D7DA"/>
+  <!-- head/body -->
+  <ellipse cx="256" cy="320" rx="140" ry="150" fill="#F6F1E8" stroke="#2B2B2B" stroke-width="10"/>
+  <!-- cheeks -->
+  <circle cx="180" cy="340" r="22" fill="#F7D7DA"/>
+  <circle cx="332" cy="340" r="22" fill="#F7D7DA"/>
+  <!-- eyes -->
+  <circle cx="218" cy="295" r="14" fill="#2B2B2B"/>
+  <circle cx="294" cy="295" r="14" fill="#2B2B2B"/>
+  <!-- nose -->
+  <ellipse cx="256" cy="335" rx="16" ry="11" fill="#2B2B2B"/>
+  <!-- mouth -->
+  <path d="M 244 360 Q 256 372 268 360" stroke="#2B2B2B" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>
