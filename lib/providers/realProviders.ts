@@ -1,16 +1,21 @@
 // Real provider adapters. NOT bundled by default — only loaded when
 // NEXT_PUBLIC_PROVIDER=real AND the corresponding API keys are present.
 //
-// Until the parent supplies keys these throw a friendly error so the
-// switch in providers/index.ts can fall back to mocks. After keys land,
-// flip the switch and these become live.
+// All third-party API calls go through Next.js server routes so that
+// secrets stay on the server (NEXT_PUBLIC_* leaks to the client bundle;
+// these keys deliberately are NOT prefixed):
+//   /api/generate-story   — LLM (story generator)
+//   /api/parse-natural    — LLM (free-form parent note → fields)
+//   /api/tts              — ElevenLabs voice clone
+//   /api/image-search     — Pexels
+//   /api/generate-image   — OpenAI image generation
 //
-// Required environment variables (see .env.example):
-//   OPENAI_API_KEY        — for STT (Whisper) + LLM (gpt-4o-mini)
-//   ELEVENLABS_API_KEY    — for TTS (voice clone)
-//   ELEVENLABS_VOICE_ID   — the cloned 엄마 voice id
+// Required server-only env vars (see .env.example):
+//   OPENAI_API_KEY        — Whisper STT, gpt-4o-mini LLM, image gen
+//   ELEVENLABS_API_KEY    — voice clone TTS
+//   ELEVENLABS_VOICE_ID   — cloned 엄마 voice id
 //
-// All keys must be server-side. The mock voice still runs on the client.
+// The mock voice still runs purely on the client.
 
 import {
   bumpHit,
@@ -28,8 +33,6 @@ import type { STTProvider } from "./sttProvider";
 import type { TTSProvider } from "./ttsProvider";
 
 const NEED_OPENAI = "OPENAI_API_KEY";
-const NEED_ELEVEN = "ELEVENLABS_API_KEY";
-const NEED_VOICE = "ELEVENLABS_VOICE_ID";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -120,7 +123,8 @@ export const openAILLMProvider: LLMProvider = {
 };
 
 // --- TTS: ElevenLabs voice clone (엄마 목소리) ---------------------------
-// Streams MP3 back; we wrap into a Blob URL and play via Audio.
+// Streams MP3 back via /api/tts (server route owns the api key); we
+// wrap into a Blob URL and play via Audio.
 
 async function playBlob(blob: Blob): Promise<void> {
   if (typeof window === "undefined") return;
@@ -131,10 +135,11 @@ async function playBlob(blob: Blob): Promise<void> {
 }
 
 // Shared fetch+cache for TTS. Used by both speak() (which then plays)
-// and prefetch() (which only warms cache).
+// and prefetch() (which only warms cache). Cache key uses just text +
+// "default" voice marker — server side resolves the actual voice id
+// from ELEVENLABS_VOICE_ID, so the client doesn't need to know it.
 async function fetchOrCachedTTSBlob(text: string): Promise<Blob> {
-  const voiceId = requireEnv(NEED_VOICE);
-  const cacheKey = await hashKey(["tts", "elevenlabs", voiceId, text]);
+  const cacheKey = await hashKey(["tts", "elevenlabs.v2", "default", text]);
   const hit = await getCachedBlob(cacheKey);
   if (hit) {
     bumpHit("tts");
@@ -142,26 +147,29 @@ async function fetchOrCachedTTSBlob(text: string): Promise<Blob> {
   }
   bumpMiss("tts");
 
-  const key = requireEnv(NEED_ELEVEN);
-  const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-    {
+  let res: Response;
+  try {
+    res = await fetch("/api/tts", {
       method: "POST",
-      headers: {
-        "xi-api-key": key,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.85 },
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`[tts] ElevenLabs returned ${res.status}`);
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    throw new Error(`[tts] /api/tts 호출 실패: ${(e as Error).message}`);
   }
+
+  if (!res.ok) {
+    // Server route returns JSON `{ ok: false, error, hint }` on failure.
+    let detail = `${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: string; hint?: string };
+      if (j.error) detail = j.hint ? `${j.error} — ${j.hint}` : j.error;
+    } catch {
+      // ignore parse failure, keep status
+    }
+    throw new Error(`[tts] ${detail}`);
+  }
+
   const blob = await res.blob();
   await putCachedBlob(cacheKey, blob);
   return blob;

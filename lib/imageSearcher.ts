@@ -83,12 +83,74 @@ export type SearchedImage = {
 // SSR-safe in-flight de-dup so concurrent calls don't double-fetch.
 const inflight = new Map<string, Promise<string | null>>();
 
-async function searchImageOnce(
+// Pexels often returns photos that don't match the story (the search
+// vocabulary is too narrow for Korean picture-book scenes). When
+// NEXT_PUBLIC_IMAGE_TIER=ai we try OpenAI image generation first and
+// fall back to Pexels. Default stays "pexels" so existing setups
+// don't suddenly start spending image-gen credits.
+function imageTier(): "ai" | "pexels" {
+  if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_IMAGE_TIER === "ai") {
+    return "ai";
+  }
+  return "pexels";
+}
+
+async function tryGenerateImage(
+  label: string,
+  orientation: "square" | "landscape" | "portrait",
+): Promise<string | null> {
+  const size =
+    orientation === "landscape"
+      ? "1536x1024"
+      : orientation === "portrait"
+        ? "1024x1536"
+        : "1024x1024";
+  // The AI prompt uses the original Korean label — gpt-image-1 handles
+  // it natively and the result is far more relevant than Pexels' English
+  // keyword fallback.
+  try {
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: label, size }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { ok?: boolean; url?: string };
+    if (!json.ok || !json.url) return null;
+    return json.url;
+  } catch {
+    return null;
+  }
+}
+
+async function tryPexels(
   label: string,
   orientation: "square" | "landscape" | "portrait",
 ): Promise<string | null> {
   const query = toQuery(label);
-  const cacheKey = await hashKey(["img", "pexels", query, orientation]);
+  try {
+    const res = await fetch("/api/image-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, orientation }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { ok: boolean; found: boolean; url?: string };
+    if (!json.ok || !json.found || !json.url) return null;
+    return json.url;
+  } catch {
+    return null;
+  }
+}
+
+async function searchImageOnce(
+  label: string,
+  orientation: "square" | "landscape" | "portrait",
+): Promise<string | null> {
+  const tier = imageTier();
+  // Cache key includes the tier so swapping NEXT_PUBLIC_IMAGE_TIER
+  // produces a new cache entry instead of re-serving stale Pexels URLs.
+  const cacheKey = await hashKey(["img.v2", tier, label, orientation]);
 
   const cached = await getCachedImageUrl(cacheKey);
   if (cached) return cached;
@@ -99,18 +161,16 @@ async function searchImageOnce(
 
   const job = (async () => {
     try {
-      const res = await fetch("/api/image-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, orientation }),
-      });
-      if (!res.ok) return null;
-      const json = (await res.json()) as { ok: boolean; found: boolean; url?: string };
-      if (!json.ok || !json.found || !json.url) return null;
-      await putCachedImageUrl(cacheKey, json.url);
-      return json.url;
-    } catch {
-      return null;
+      let url: string | null = null;
+      if (tier === "ai") {
+        url = await tryGenerateImage(label, orientation);
+        if (!url) url = await tryPexels(label, orientation);
+      } else {
+        url = await tryPexels(label, orientation);
+      }
+      if (!url) return null;
+      await putCachedImageUrl(cacheKey, url);
+      return url;
     } finally {
       inflight.delete(cacheKey);
     }

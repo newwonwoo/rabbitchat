@@ -72,7 +72,17 @@ type PlacementRow = {
   }>;
 };
 
-type ValidationIssue = { level: "warn" | "error"; msg: string };
+type ValidationAction =
+  | { kind: "regenerate-scenario"; label: string }
+  | { kind: "regenerate-voice"; label: string }
+  | { kind: "retry-failed-images"; label: string }
+  | { kind: "retry-validation"; label: string };
+
+type ValidationIssue = {
+  level: "warn" | "error";
+  msg: string;
+  action?: ValidationAction;
+};
 
 const DEFAULT_INPUT: AuthorInput = {
   childName: "원우",
@@ -294,22 +304,18 @@ export function PipelineTester() {
     setIssues([]);
   };
 
-  const runAll = async () => {
-    if (running) return;
-    setRunning(true);
-    resetAll();
+  // --- Per-stage runners --------------------------------------------------
+  // Each one is callable in isolation so the failed-cell retry buttons in
+  // the validation grid can fix only what broke. They mutate state and
+  // return what the next stage in the chain needs.
 
-    // Stage 1 — input (already known)
-    const t0 = Date.now();
-    setStage("input", { status: "done", startedAt: t0, finishedAt: Date.now() });
-
-    // Stage 2 — scenario
-    let story: Story | null = null;
-    setStage("scenario", { status: "running", startedAt: Date.now() });
+  async function runScenario(): Promise<Story | null> {
+    setStage("scenario", { status: "running", startedAt: Date.now(), error: undefined });
     try {
-      story = await generateStoryWithAI(composeInput());
-      setScenario(story);
+      const s = await generateStoryWithAI(composeInput());
+      setScenario(s);
       setStage("scenario", { status: "done", finishedAt: Date.now() });
+      return s;
     } catch (e) {
       const err = e as AIGeneratorError;
       setStage("scenario", {
@@ -317,82 +323,103 @@ export function PipelineTester() {
         finishedAt: Date.now(),
         error: `${err.message}${err.hint ? " — " + err.hint : ""}`,
       });
-      setRunning(false);
-      return;
+      return null;
     }
+  }
 
-    // Stage 3 — voice list
-    setStage("voiceList", { status: "running", startedAt: Date.now() });
-    const lines = collectStoryLines(story);
+  function runVoiceList(s: Story): string[] {
+    setStage("voiceList", { status: "running", startedAt: Date.now(), error: undefined });
+    const lines = collectStoryLines(s);
     setVoiceList(lines);
     setStage("voiceList", { status: "done", finishedAt: Date.now() });
+    return lines;
+  }
 
-    // Stage 4 — voice gen
-    setStage("voiceGen", { status: "running", startedAt: Date.now() });
+  async function runVoiceGen(lines: string[]): Promise<WarmReport> {
+    setStage("voiceGen", { status: "running", startedAt: Date.now(), error: undefined });
     const vr = await warmTTSPhrases(lines);
     setVoiceReport(vr);
     setStage("voiceGen", {
-      status: vr.skippedReason ? "skipped" : "done",
+      status: vr.skippedReason ? "skipped" : vr.failed > 0 ? "failed" : "done",
       finishedAt: Date.now(),
       error: vr.skippedReason
         ? vr.skippedReason === "mock_mode"
           ? "Mock 모드 — TTS 호출 스킵"
           : "Provider 미지원"
-        : undefined,
+        : vr.failed > 0
+          ? `${vr.failed}개 실패 — ELEVENLABS 키/voice id 확인`
+          : undefined,
     });
+    return vr;
+  }
 
-    // Stage 5 — image list
-    setStage("imageList", { status: "running", startedAt: Date.now() });
-    const labels = collectStoryImageLabels(story);
-    const imgListRaw: Array<{ label: string; orientation: "square" | "landscape" }> = [
+  function runImageList(s: Story): Array<{ label: string; orientation: "square" | "landscape" }> {
+    setStage("imageList", { status: "running", startedAt: Date.now(), error: undefined });
+    const labels = collectStoryImageLabels(s);
+    const list: Array<{ label: string; orientation: "square" | "landscape" }> = [
       ...labels.landscape.map((l) => ({ label: l, orientation: "landscape" as const })),
       ...labels.square.map((l) => ({ label: l, orientation: "square" as const })),
     ];
-    setImageList(imgListRaw);
+    setImageList(list);
     setStage("imageList", { status: "done", finishedAt: Date.now() });
+    return list;
+  }
 
-    // Stage 6 — image fetch
-    setStage("imageFetch", { status: "running", startedAt: Date.now() });
-    const fetched: ImgFetchItem[] = [];
-    for (const item of imgListRaw) {
-      const cacheKey = await hashKey(["img", "pexels", item.label, item.orientation]);
+  async function fetchOneImage(
+    item: { label: string; orientation: "square" | "landscape" },
+    bypassCache = false,
+  ): Promise<ImgFetchItem> {
+    const cacheKey = await hashKey(["img", "pexels", item.label, item.orientation]);
+    if (!bypassCache) {
       const cached = await getCachedImageUrl(cacheKey);
-      if (cached) {
-        fetched.push({ ...item, url: cached, cacheHit: true });
-        continue;
-      }
-      try {
-        const res = await fetch("/api/image-search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: item.label, orientation: item.orientation }),
-        });
-        if (!res.ok) {
-          fetched.push({ ...item, url: null, cacheHit: false });
-          continue;
-        }
-        const json = (await res.json()) as { ok: boolean; found: boolean; url?: string };
-        const url = json.ok && json.found && json.url ? json.url : null;
-        if (url) await putCachedImageUrl(cacheKey, url);
-        fetched.push({ ...item, url, cacheHit: false });
-      } catch {
-        fetched.push({ ...item, url: null, cacheHit: false });
-      }
+      if (cached) return { ...item, url: cached, cacheHit: true };
+    }
+    try {
+      const res = await fetch("/api/image-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: item.label, orientation: item.orientation }),
+      });
+      if (!res.ok) return { ...item, url: null, cacheHit: false };
+      const json = (await res.json()) as { ok: boolean; found: boolean; url?: string };
+      const url = json.ok && json.found && json.url ? json.url : null;
+      if (url) await putCachedImageUrl(cacheKey, url);
+      return { ...item, url, cacheHit: false };
+    } catch {
+      return { ...item, url: null, cacheHit: false };
+    }
+  }
+
+  async function runImageFetch(
+    list: Array<{ label: string; orientation: "square" | "landscape" }>,
+  ): Promise<ImgFetchItem[]> {
+    setStage("imageFetch", { status: "running", startedAt: Date.now(), error: undefined });
+    const fetched: ImgFetchItem[] = [];
+    for (const item of list) {
+      fetched.push(await fetchOneImage(item));
     }
     setImageFetch(fetched);
-    setStage("imageFetch", { status: "done", finishedAt: Date.now() });
+    const failedCount = fetched.filter((f) => !f.url).length;
+    setStage("imageFetch", {
+      status: failedCount > 0 ? "failed" : "done",
+      finishedAt: Date.now(),
+      error: failedCount > 0 ? `${failedCount}개 검색 실패` : undefined,
+    });
+    return fetched;
+  }
 
-    // Stage 7 — placement
-    setStage("placement", { status: "running", startedAt: Date.now() });
+  function runPlacement(s: Story, fetched: ImgFetchItem[]): PlacementRow[] {
+    setStage("placement", { status: "running", startedAt: Date.now(), error: undefined });
     const urlByLabel = new Map<string, string>();
     for (const f of fetched) if (f.url) urlByLabel.set(f.label, f.url);
-    const rows: PlacementRow[] = story.scenes.map((s) => ({
-      sceneId: s.id,
-      placeId: s.placeId,
-      spokenLine: s.spokenLine,
-      audioFile: s.audioFile,
-      bgImage: urlByLabel.get(s.placeId) ?? urlByLabel.get(s.parentSummary?.split(/\s+/)[0] ?? ""),
-      choices: s.choices.map((c) => ({
+    const rows: PlacementRow[] = s.scenes.map((sc) => ({
+      sceneId: sc.id,
+      placeId: sc.placeId,
+      spokenLine: sc.spokenLine,
+      audioFile: sc.audioFile,
+      bgImage:
+        urlByLabel.get(sc.placeId) ?? urlByLabel.get(sc.parentSummary?.split(/\s+/)[0] ?? ""),
+      choices: sc.choices.map((c) => ({
         label: c.parentLabel,
         emoji: c.emoji,
         responseLine: c.responseLine,
@@ -401,38 +428,211 @@ export function PipelineTester() {
     }));
     setPlacement(rows);
     setStage("placement", { status: "done", finishedAt: Date.now() });
+    return rows;
+  }
 
-    // Stage 8 — validation
-    setStage("validation", { status: "running", startedAt: Date.now() });
+  function runValidation(s: Story, vr: WarmReport, fetched: ImgFetchItem[]): ValidationIssue[] {
+    setStage("validation", { status: "running", startedAt: Date.now(), error: undefined });
     const probs: ValidationIssue[] = [];
-    if (story.scenes.length < 3) probs.push({ level: "error", msg: `장면이 ${story.scenes.length}개 — 최소 3개 권장` });
-    if (story.scenes.length > 5) probs.push({ level: "warn", msg: `장면이 ${story.scenes.length}개 — 5개 이하 권장` });
+    if (s.scenes.length < 3) {
+      probs.push({
+        level: "error",
+        msg: `장면이 ${s.scenes.length}개 — 최소 3개 권장`,
+        action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+      });
+    }
+    if (s.scenes.length > 5) {
+      probs.push({
+        level: "warn",
+        msg: `장면이 ${s.scenes.length}개 — 5개 이하 권장`,
+        action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+      });
+    }
     let totalBranches = 0;
-    for (const s of story.scenes) totalBranches += s.choices.length;
-    if (totalBranches < 5) probs.push({ level: "warn", msg: `총 분기 ${totalBranches}개 (handoff §3 권장: ≥5)` });
-    for (const s of story.scenes) {
-      if (!s.spokenLine && !s.audioFile) {
-        probs.push({ level: "error", msg: `${s.id}: spokenLine과 audioFile 둘 다 없음 — 장면 무음` });
+    for (const sc of s.scenes) totalBranches += sc.choices.length;
+    if (totalBranches < 5) {
+      probs.push({
+        level: "warn",
+        msg: `총 분기 ${totalBranches}개 (handoff §3 권장: ≥5)`,
+        action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+      });
+    }
+    for (const sc of s.scenes) {
+      if (!sc.spokenLine && !sc.audioFile) {
+        probs.push({
+          level: "error",
+          msg: `${sc.id}: spokenLine과 audioFile 둘 다 없음 — 장면 무음`,
+          action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+        });
       }
-      if (s.choices.length > 3) {
-        probs.push({ level: "warn", msg: `${s.id}: 선택지 ${s.choices.length}개 (한 화면 ≤3)` });
+      if (sc.choices.length > 3) {
+        probs.push({
+          level: "warn",
+          msg: `${sc.id}: 선택지 ${sc.choices.length}개 (한 화면 ≤3)`,
+          action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+        });
       }
-      for (const c of s.choices) {
+      for (const c of sc.choices) {
         if (!c.responseLine) {
-          probs.push({ level: "warn", msg: `${s.id}/${c.id}: responseLine 없음 — 깡총이 반응 X` });
+          probs.push({
+            level: "warn",
+            msg: `${sc.id}/${c.id}: responseLine 없음 — 깡총이 반응 X`,
+            action: { kind: "regenerate-scenario", label: "시나리오 재생성" },
+          });
         }
       }
     }
-    if (vr.failed > 0) probs.push({ level: "error", msg: `TTS 실패 ${vr.failed}개` });
+    if (vr.failed > 0) {
+      probs.push({
+        level: "error",
+        msg: `TTS 실패 ${vr.failed}개`,
+        action: { kind: "regenerate-voice", label: "목소리 재생성" },
+      });
+    }
     const imgFailed = fetched.filter((f) => !f.url).length;
-    if (imgFailed > 0) probs.push({ level: "warn", msg: `이미지 ${imgFailed}개 검색 실패 — emoji 폴백 사용됨` });
+    if (imgFailed > 0) {
+      probs.push({
+        level: "warn",
+        msg: `이미지 ${imgFailed}개 검색 실패 — emoji 폴백 사용됨`,
+        action: { kind: "retry-failed-images", label: "실패 이미지만 재시도" },
+      });
+    }
     setIssues(probs);
     setStage("validation", {
       status: probs.some((p) => p.level === "error") ? "failed" : "done",
       finishedAt: Date.now(),
     });
+    return probs;
+  }
+
+  // Full chain (▶ 테스트 실행).
+  const runAll = async () => {
+    if (running) return;
+    setRunning(true);
+    resetAll();
+
+    const t0 = Date.now();
+    setStage("input", { status: "done", startedAt: t0, finishedAt: Date.now() });
+
+    const s = await runScenario();
+    if (!s) {
+      setRunning(false);
+      return;
+    }
+    const lines = runVoiceList(s);
+    const vr = await runVoiceGen(lines);
+    const list = runImageList(s);
+    const fetched = await runImageFetch(list);
+    runPlacement(s, fetched);
+    runValidation(s, vr, fetched);
 
     setRunning(false);
+  };
+
+  // Re-run a single stage and everything downstream from it. Used by the
+  // per-card "🔄 다시" button and by validation-issue action buttons.
+  const retryFromStage = async (id: StageId) => {
+    if (running) return;
+    setRunning(true);
+    try {
+      let s = scenario;
+      let lines = voiceList;
+      let vr = voiceReport;
+      let list = imageList;
+      let fetched = imageFetch;
+
+      const stages: StageId[] = [
+        "scenario",
+        "voiceList",
+        "voiceGen",
+        "imageList",
+        "imageFetch",
+        "placement",
+        "validation",
+      ];
+      const startIdx = stages.indexOf(id);
+      if (startIdx === -1) return;
+
+      for (let i = startIdx; i < stages.length; i++) {
+        const stageId = stages[i];
+        if (stageId === "scenario") {
+          s = await runScenario();
+          if (!s) return;
+        } else if (stageId === "voiceList") {
+          if (!s) return;
+          lines = runVoiceList(s);
+        } else if (stageId === "voiceGen") {
+          vr = await runVoiceGen(lines);
+        } else if (stageId === "imageList") {
+          if (!s) return;
+          list = runImageList(s);
+        } else if (stageId === "imageFetch") {
+          fetched = await runImageFetch(list);
+        } else if (stageId === "placement") {
+          if (!s) return;
+          runPlacement(s, fetched);
+        } else if (stageId === "validation") {
+          if (!s || !vr) return;
+          runValidation(s, vr, fetched);
+        }
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  // Refetch only images that previously came back null. Cheaper than
+  // re-running the whole image stage.
+  const retryFailedImages = async () => {
+    if (running) return;
+    if (imageFetch.length === 0) return;
+    setRunning(true);
+    setStage("imageFetch", { status: "running", startedAt: Date.now(), error: undefined });
+    try {
+      const next: ImgFetchItem[] = [];
+      for (const it of imageFetch) {
+        if (it.url) {
+          next.push(it);
+          continue;
+        }
+        next.push(await fetchOneImage({ label: it.label, orientation: it.orientation }, true));
+      }
+      setImageFetch(next);
+      const failedCount = next.filter((f) => !f.url).length;
+      setStage("imageFetch", {
+        status: failedCount > 0 ? "failed" : "done",
+        finishedAt: Date.now(),
+        error: failedCount > 0 ? `${failedCount}개 검색 실패` : undefined,
+      });
+      if (scenario) {
+        runPlacement(scenario, next);
+        if (voiceReport) runValidation(scenario, voiceReport, next);
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const runValidationOnly = () => {
+    if (!scenario || !voiceReport) return;
+    runValidation(scenario, voiceReport, imageFetch);
+  };
+
+  const handleIssueAction = async (action: ValidationAction) => {
+    switch (action.kind) {
+      case "regenerate-scenario":
+        await retryFromStage("scenario");
+        break;
+      case "regenerate-voice":
+        await retryFromStage("voiceGen");
+        break;
+      case "retry-failed-images":
+        await retryFailedImages();
+        break;
+      case "retry-validation":
+        runValidationOnly();
+        break;
+    }
   };
 
   const totalMs = useMemo(() => {
@@ -750,6 +950,12 @@ export function PipelineTester() {
           title={o.title}
           hint={o.hint}
           state={stages[o.id]}
+          onRetry={
+            o.id === "input"
+              ? undefined
+              : () => retryFromStage(o.id)
+          }
+          retryDisabled={running || (o.id !== "scenario" && !scenario)}
         >
           {o.id === "input" ? <InputView input={composeInput()} mode={inputMode} /> : null}
           {o.id === "scenario" && scenario ? <ScenarioView story={scenario} /> : null}
@@ -761,13 +967,24 @@ export function PipelineTester() {
             <ImageListView items={imageList} />
           ) : null}
           {o.id === "imageFetch" && imageFetch.length ? (
-            <ImageFetchView items={imageFetch} />
+            <ImageFetchView
+              items={imageFetch}
+              onRetryFailed={
+                imageFetch.some((f) => !f.url) && !running
+                  ? retryFailedImages
+                  : undefined
+              }
+            />
           ) : null}
           {o.id === "placement" && placement.length ? (
             <PlacementView rows={placement} />
           ) : null}
           {o.id === "validation" && (issues.length > 0 || stages.validation.status === "done") ? (
-            <ValidationView issues={issues} />
+            <ValidationView
+              issues={issues}
+              onAction={handleIssueAction}
+              busy={running}
+            />
           ) : null}
         </StageCard>
       ))}
@@ -800,6 +1017,8 @@ function StageCard({
   title,
   hint,
   state,
+  onRetry,
+  retryDisabled,
   children,
 }: {
   index: number;
@@ -807,6 +1026,8 @@ function StageCard({
   title: string;
   hint: string;
   state: StageState;
+  onRetry?: () => void;
+  retryDisabled?: boolean;
   children?: React.ReactNode;
 }) {
   const took =
@@ -823,6 +1044,13 @@ function StageCard({
           : state.status === "skipped"
             ? "bg-yellow-100 text-yellow-800"
             : "bg-kkang-cream text-kkang-ink/60";
+  // Show the retry button once the stage has actually run at least once,
+  // or when it ended in a recoverable state (failed/skipped/done).
+  const showRetry =
+    onRetry &&
+    (state.status === "failed" ||
+      state.status === "done" ||
+      state.status === "skipped");
   return (
     <div className="rounded-3xl bg-white p-5 shadow-card">
       <header className="mb-3 flex items-center gap-3">
@@ -837,6 +1065,17 @@ function StageCard({
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pill}`}>
             {state.status}
           </span>
+          {showRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={retryDisabled}
+              className="rounded-lg bg-kkang-cream px-2 py-1 text-[11px] font-semibold shadow-soft active:scale-[0.98] disabled:opacity-50"
+              title="이 단계부터 다시 실행"
+            >
+              🔄 다시
+            </button>
+          ) : null}
         </div>
       </header>
       {state.error ? (
@@ -957,13 +1196,30 @@ function ImageListView({ items }: { items: { label: string; orientation: string 
   );
 }
 
-function ImageFetchView({ items }: { items: ImgFetchItem[] }) {
+function ImageFetchView({
+  items,
+  onRetryFailed,
+}: {
+  items: ImgFetchItem[];
+  onRetryFailed?: () => void;
+}) {
   const ok = items.filter((i) => i.url).length;
   return (
     <div className="space-y-2 text-xs text-kkang-ink/80">
-      <div>
-        성공 <strong>{ok}</strong> / 실패 {items.length - ok} (캐시 적중{" "}
-        {items.filter((i) => i.cacheHit).length})
+      <div className="flex items-center justify-between gap-2">
+        <span>
+          성공 <strong>{ok}</strong> / 실패 {items.length - ok} (캐시 적중{" "}
+          {items.filter((i) => i.cacheHit).length})
+        </span>
+        {onRetryFailed ? (
+          <button
+            type="button"
+            onClick={onRetryFailed}
+            className="rounded-lg bg-kkang-pink px-2 py-1 text-[11px] font-semibold shadow-soft active:scale-[0.98]"
+          >
+            🔄 실패만 재시도
+          </button>
+        ) : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
         {items.map((it, i) => (
@@ -1020,26 +1276,70 @@ function PlacementView({ rows }: { rows: PlacementRow[] }) {
   );
 }
 
-function ValidationView({ issues }: { issues: ValidationIssue[] }) {
+function ValidationView({
+  issues,
+  onAction,
+  busy,
+}: {
+  issues: ValidationIssue[];
+  onAction?: (action: ValidationAction) => void;
+  busy?: boolean;
+}) {
   if (issues.length === 0) {
     return (
       <div className="text-sm text-green-700">✅ 모든 검증 통과 — 아이에게 배포 가능</div>
     );
   }
+  // De-duplicate "regenerate-scenario" actions in the bulk-action footer
+  // (every scenario-level issue suggests the same fix).
+  const bulkActions = new Map<string, ValidationAction>();
+  for (const it of issues) {
+    if (it.action) bulkActions.set(it.action.kind, it.action);
+  }
   return (
-    <ul className="space-y-1 text-xs">
-      {issues.map((it, i) => (
-        <li
-          key={i}
-          className={
-            it.level === "error"
-              ? "text-red-700"
-              : "text-yellow-800"
-          }
-        >
-          {it.level === "error" ? "🔴" : "⚠️"} {it.msg}
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3 text-xs">
+      <ul className="space-y-1">
+        {issues.map((it, i) => (
+          <li
+            key={i}
+            className={`flex items-start justify-between gap-2 rounded-lg px-2 py-1 ${
+              it.level === "error"
+                ? "bg-red-50 text-red-800"
+                : "bg-yellow-50 text-yellow-900"
+            }`}
+          >
+            <span className="flex-1">
+              {it.level === "error" ? "🔴" : "⚠️"} {it.msg}
+            </span>
+            {it.action && onAction ? (
+              <button
+                type="button"
+                onClick={() => onAction(it.action!)}
+                disabled={busy}
+                className="rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-kkang-ink shadow-soft active:scale-[0.98] disabled:opacity-50"
+              >
+                🔧 {it.action.label}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {bulkActions.size > 0 && onAction ? (
+        <div className="flex flex-wrap gap-2 border-t border-kkang-beige/60 pt-2">
+          <span className="self-center text-[10px] text-kkang-ink/60">일괄 조치:</span>
+          {Array.from(bulkActions.values()).map((a) => (
+            <button
+              key={a.kind}
+              type="button"
+              onClick={() => onAction(a)}
+              disabled={busy}
+              className="rounded-lg bg-kkang-pink px-3 py-1 text-[11px] font-bold shadow-pop active:scale-[0.98] disabled:opacity-50"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

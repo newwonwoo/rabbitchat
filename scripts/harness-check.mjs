@@ -49,6 +49,10 @@ const FORBIDDEN_API_EXEMPTIONS = new Set([
   path.join("app", "api", "parse-natural", "route.ts"),
   // Story generator server route — same exemption rationale.
   path.join("app", "api", "generate-story", "route.ts"),
+  // ElevenLabs TTS server route. Owns the API key; client calls /api/tts.
+  path.join("app", "api", "tts", "route.ts"),
+  // OpenAI image-gen server route. Owns OPENAI_API_KEY; client calls /api/generate-image.
+  path.join("app", "api", "generate-image", "route.ts"),
 ]);
 
 const FORBIDDEN_APIS = [
